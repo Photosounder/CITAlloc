@@ -12,7 +12,7 @@ CIT Alloc can also optionally erase all the unused bytes in the given memory spa
 
 ### cit_alloc.h
 
-This is the pure implementation of CIT Alloc, it doesn't contain anything specific to a platform or application, anything specific to it must be provided through a series of defines. This makes it quite flexible, for instance you could use it to give it control of an entire heap, as I do with WebAssembly modules, or you could make it exist entirely inside a buffer inside a problem that wouldn't use CIT Alloc for its other allocations.
+This is the pure implementation of CIT Alloc, it doesn't contain anything specific to a platform or application, anything specific to it must be provided through a series of defines. This makes it quite flexible, for instance you could use it to give it control of an entire heap, as I do with WebAssembly modules, or you could make it exist entirely inside a buffer inside a program that wouldn't use CIT Alloc for its other allocations.
 
 The top of the file contains a lot of information about how it works and how to use it.
 
