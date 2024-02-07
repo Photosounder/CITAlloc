@@ -1,3 +1,5 @@
+#ifdef __wasm__
+
 #ifdef CITA_WASM_IMPLEMENTATION_PART1
 
   // Needed to stop the linker from adding the default implementation
@@ -111,3 +113,5 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
   #endif // CITA_WASM_IMPLEMENTATION_PART2
 
 #endif // CITA_WASM_IMPLEMENTATION_PART1
+
+#endif // __wasm__
