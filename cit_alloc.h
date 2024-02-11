@@ -312,11 +312,7 @@ void *cita_malloc(size_t size)
 		el->next_index = 0;
 	}
 
-	// Insert our element in the chain
-	c->elem[el->prev_index].next_index = index;
-	c->elem[el->next_index].prev_index = index;
-
-	// Write everything else
+	// Write the element
 	el->addr = c->elem[el->prev_index].addr_after;		// address of buffer
 	el->addr_after = cita_align_up(el->addr + size);	// address after this buffer
 	el->after_space = c->elem[el->next_index].addr - el->addr_after;			// space after this buffer
@@ -324,6 +320,10 @@ void *cita_malloc(size_t size)
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 	if (cita_input_info)							// Extra info provided through a global pointer
 		strncpy(&el->extra.info, cita_input_info, sizeof(el->extra.info));
+
+	// Insert our element in the chain
+	c->elem[el->prev_index].next_index = index;
+	c->elem[el->next_index].prev_index = index;
 
 	// If the buffer is added at the end of the memory
 	if (el->next_index == 0)
