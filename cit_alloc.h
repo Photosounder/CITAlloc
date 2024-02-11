@@ -177,9 +177,10 @@ void cita_table_init()
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 
 	// Add elem 1 which will always be the table
+	char *orig_info = cita_input_info;
 	cita_input_info = "CITA table";
 	(void) cita_malloc(sizeof(cita_elem_t) * c->elem_as);
-	cita_input_info = NULL;
+	cita_input_info = orig_info;
 }
 
 int32_t cita_table_find_buffer(size_t addr)
@@ -216,7 +217,7 @@ void cita_free_core(void *ptr, int allow_memset)
 	int32_t index = cita_table_find_buffer(addr);
 	if (index < 0)
 	{
-		CITA_REPORT("cita_free(%#zx): buffer not found", addr);
+		CITA_REPORT("cita_free(%#zx): buffer not found, input info says \"%s\"", addr, cita_input_info);
 		return;
 	}
 
@@ -371,7 +372,7 @@ void *cita_realloc(void *ptr, size_t size)
 	int32_t index = cita_table_find_buffer(addr);
 	if (index < 0)
 	{
-		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found", addr, size);
+		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found, input info says \"%s\"", addr, size, cita_input_info);
 		return NULL;
 	}
 

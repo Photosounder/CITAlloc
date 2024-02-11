@@ -44,10 +44,20 @@
     #include "cit_alloc.h"
 
 char input_info[60];
+
+static const char *cita_get_filename(const char *path)
+{
+	for (int i=strlen(path)-1; i >= 0; i--)
+		if (path[i] == '/' || path[i] == '\\')
+			return &path[i+1];
+	return path;
+}
+
 #define ADD_CITA_INFO \
 	if (cita_input_info==NULL) { \
-		snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, get_filename_from_path(filename)); \
-		cita_input_info = input_info; }
+		int ret = snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
+		cita_input_info = input_info; \
+		}
 
 void *cita_wasm_malloc(size_t size, const char *filename, const char *func, int line)
 {
@@ -95,7 +105,7 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 
 		if (p == NULL)
 		{
-			fprintf_rl(stderr, "cita_realloc(*buffer=%p, size=%zu) failed.\n", (void *) *buffer, newsize * size_elem);
+			CITA_REPORT("cita_realloc(*buffer=%p, size=%zu) failed.\n", (void *) *buffer, newsize * size_elem);
 			return alloc_count;
 		}
 		else
