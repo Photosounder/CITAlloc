@@ -130,7 +130,7 @@ void cita_enlarge_memory(size_t req)
 
 	// Report failure to enlarge by enough
 	if (req > CITA_MEM_END)
-		CITA_REPORT("cita_enlarge_memory(): requested increase from 0x%zx (%.1f MB) to at least 0x%zx (%.1f MB) but the memory can only be enlarged to 0x%zx (%.1f MB)", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
+		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB)", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
 
 	// Erase new range
 	cite_erase_to_mem_end(old_size);
@@ -173,11 +173,13 @@ void cita_table_init()
 	el->addr = (size_t) c;
 	el->addr_after = (size_t) c->elem;
 	el->after_space = 0;
-	strncpy(&el->extra.info, "cita_table", sizeof(el->extra.info));
+	strncpy(&el->extra.info, "CITA base", sizeof(el->extra.info));
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 
 	// Add elem 1 which will always be the table
+	cita_input_info = "CITA table";
 	(void) cita_malloc(sizeof(cita_elem_t) * c->elem_as);
+	cita_input_info = NULL;
 }
 
 int32_t cita_table_find_buffer(size_t addr)
@@ -190,7 +192,7 @@ int32_t cita_table_find_buffer(size_t addr)
 			if (c->elem[i].addr == addr)
 				return i;
 
-			CITA_REPORT("cita_table_find_buffer(0x%zx): pointer points to inside the buffer starting %zd (0x%zx) bytes earlier at 0x%zx. Buffer is up to %zd (0x%zx) bytes large and has this info: \"%.*s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info);
 			return -1;
 		}
 	}
@@ -206,7 +208,7 @@ void cita_free_core(void *ptr, int allow_memset)
 
 	if (addr < CITA_MEM_START)
 	{
-		CITA_REPORT("cita_free(0x%zx): pointer isn't a heap address, heap starts at 0x%zx", addr, CITA_MEM_START);
+		CITA_REPORT("cita_free(%#zx): pointer isn't a heap address, heap starts at %#zx", addr, CITA_MEM_START);
 		return;
 	}
 
@@ -214,7 +216,7 @@ void cita_free_core(void *ptr, int allow_memset)
 	int32_t index = cita_table_find_buffer(addr);
 	if (index < 0)
 	{
-		CITA_REPORT("cita_free(0x%zx): buffer not found", addr);
+		CITA_REPORT("cita_free(%#zx): buffer not found", addr);
 		return;
 	}
 
@@ -277,6 +279,7 @@ void *cita_malloc(size_t size)
 	c->available_index = el->prev_index;
 	el->prev_index = -1;
 
+#if 0
 	// Traverse the table linearly to find the first free space large enough
 	for (int32_t i=0; i < c->elem_count; i++)
 		if (c->elem[i].after_space >= size)
@@ -285,6 +288,21 @@ void *cita_malloc(size_t size)
 			el->next_index = c->elem[el->prev_index].next_index;
 			break;
 		}
+#else
+	// Traverse the table in order to find the first free space large enough
+	int32_t i = 0;
+	do
+	{
+		if (c->elem[i].after_space >= size)
+		{
+			el->prev_index = i;
+			el->next_index = c->elem[el->prev_index].next_index;
+			break;
+		}
+
+		i = c->elem[i].next_index;
+	} while (i);
+#endif
 
 	// Get memory from the end if no suitable space was found
 	if (el->prev_index < 0)
@@ -318,7 +336,7 @@ void *cita_malloc(size_t size)
 		// Report failure to obtain enough 
 		if (el->addr_after > CITA_MEM_END)
 		{
-			CITA_REPORT("cita_malloc(%zd): new buffer would start at 0x%zx and end at 0x%zx (%.1f MB) but the memory can only be enlarged to 0x%zx (%.1f MB)", size, el->addr, el->addr_after, el->addr_after/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
+			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB)", size, el->addr, el->addr_after, el->addr_after/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
 			cita_free((void *) el->addr);
 			return NULL;
 		}
@@ -345,7 +363,7 @@ void *cita_realloc(void *ptr, size_t size)
 
 	if (addr < CITA_MEM_START)
 	{
-		CITA_REPORT("cita_realloc(0x%zx, %zd): pointer isn't a heap address, heap starts at 0x%zx", addr, size, CITA_MEM_START);
+		CITA_REPORT("cita_realloc(%#zx, %zd): pointer isn't a heap address, heap starts at %#zx", addr, size, CITA_MEM_START);
 		return NULL;
 	}
 
@@ -353,7 +371,7 @@ void *cita_realloc(void *ptr, size_t size)
 	int32_t index = cita_table_find_buffer(addr);
 	if (index < 0)
 	{
-		CITA_REPORT("cita_realloc(0x%zx, %zd): buffer not found", addr, size);
+		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found", addr, size);
 		return NULL;
 	}
 
@@ -385,10 +403,21 @@ void *cita_realloc(void *ptr, size_t size)
 		if (index == 1)			// repoint c->elem if it's what we just moved
 			c->elem = ptr;
 		el = &c->elem[index];		// needed if it's c->elem we're reallocating
-		memcpy(ptr, (void *) el_copy.addr, el_copy.addr_after - el_copy.addr);
+		memmove(ptr, (void *) el_copy.addr, el_copy.addr_after - el_copy.addr);
+
 		#ifdef CITA_FREE_PATTERN
-		memset((void *) el_copy.addr, CITA_FREE_PATTERN, el_copy.addr_after - el_copy.addr);	// clean the old data
+		// Avoid overlap
+		if (el->addr <= el_copy.addr && el_copy.addr < el->addr_after)
+			el_copy.addr = el->addr_after;
+		if (el->addr <= el_copy.addr_after && el_copy.addr_after < el->addr_after)
+			el_copy.addr_after = el->addr;
+
+		// Clean the old data
+		if (el_copy.addr_after > el_copy.addr)
+			memset((void *) el_copy.addr, CITA_FREE_PATTERN, el_copy.addr_after - el_copy.addr);
 		#endif
+
+		// Copy extra info and set timestamp
 		memcpy(&el->extra, &el_copy.extra, sizeof(cita_extra_t));
 		el->extra.time_modified = c->timestamp;
 	}
