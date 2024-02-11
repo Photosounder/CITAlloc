@@ -40,3 +40,10 @@ In my module project, in the main header, `cita_wasm.h` is the first thing to be
 ```
 
 Part 1 is for having the functions that suppress the linking of the default allocator, part 2 is for the actual implementation which needs functions defined in the headers above it.
+
+## External monitoring
+
+CIT Alloc is made so that the layout can be observed from outside of the module, so that the allocations of that module can be visualised in real time and understood clearly. This is a good way to see how memory is used inefficiently, how fragmented it might be, what buffers change over time and so you can easily verify if you have leaks or anything in memory that shouldn't be there anymore. My current visualisation module looks like this:
+
+:imagesdir: img
+image::screenshot1.png[screenshot1.png,align="center"]
