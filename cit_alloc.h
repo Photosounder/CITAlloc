@@ -408,9 +408,10 @@ void *cita_realloc(void *ptr, size_t size)
 
 		#ifdef CITA_FREE_PATTERN
 		// Avoid overlap
-		if (el->addr <= el_copy.addr && el_copy.addr < el->addr_after)
+		size_t erasable_top = el->addr + el_copy.addr_after - el_copy.addr;
+		if (el->addr <= el_copy.addr && el_copy.addr < erasable_top)
 			el_copy.addr = el->addr_after;
-		if (el->addr <= el_copy.addr_after && el_copy.addr_after < el->addr_after)
+		if (el->addr <= el_copy.addr_after && el_copy.addr_after < erasable_top)
 			el_copy.addr_after = el->addr;
 
 		// Clean the old data
