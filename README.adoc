@@ -27,7 +27,7 @@ In my module project, in the main header, `cita_wasm.h` is the first thing to be
 #include "cita_wasm.h"
 #undef CITA_WASM_IMPLEMENTATION_PART1
 
-#include "plugin_rl.h"
+#include "plugin_rl.h"		// this includes cita_wasm.h
 
 #define WAHE_INCLUDE_IMPL
 #include <wahe_imports.h>
