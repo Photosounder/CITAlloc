@@ -33,7 +33,7 @@
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
     #define CITA_ALIGN 16
-    #define CITA_FREE_PATTERN 0xC7	// optional but makes the whole heap very neat
+    #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat
     extern unsigned char __heap_base;
     #define CITA_MEM_START ((size_t)&__heap_base)
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)

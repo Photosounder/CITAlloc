@@ -114,7 +114,7 @@ size_t cita_align_up(size_t addr)
 	return cita_align_down(addr+CITA_ALIGN-1);
 }
 
-void cite_erase_to_mem_end(size_t start)
+void cita_erase_to_mem_end(size_t start)
 {
 	#ifdef CITA_FREE_PATTERN
 	if (start < CITA_MEM_END)
@@ -133,7 +133,7 @@ void cita_enlarge_memory(size_t req)
 		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB)", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
 
 	// Erase new range
-	cite_erase_to_mem_end(old_size);
+	cita_erase_to_mem_end(old_size);
 }
 
 void cita_table_init()
@@ -142,7 +142,7 @@ void cita_table_init()
 		return;
 
 	// Erase whole heap
-	cite_erase_to_mem_end(CITA_MEM_START);
+	cita_erase_to_mem_end(CITA_MEM_START);
 
 	// Allocate table structure
 	c = (cita_table_t *) CITA_MEM_START;
@@ -384,7 +384,7 @@ void *cita_realloc(void *ptr, size_t size)
 	{
 		// Enlarge memory if needed
 		if (el->addr + size > CITA_MEM_END)
-			CITA_MEM_ENLARGE(el->addr + size);
+			cita_enlarge_memory(el->addr + size);
 
 		space = CITA_MEM_END - el->addr;
 	}
