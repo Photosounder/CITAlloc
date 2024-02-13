@@ -173,7 +173,7 @@ void cita_table_init()
 	el->addr = (size_t) c;
 	el->addr_after = (size_t) c->elem;
 	el->after_space = 0;
-	strncpy(&el->extra.info, "CITA base", sizeof(el->extra.info));
+	strncpy((char *) &el->extra.info, "CITA base", sizeof(el->extra.info));
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 
 	// Add elem 1 which will always be the table
@@ -320,7 +320,7 @@ void *cita_malloc(size_t size)
 	c->elem[el->prev_index].after_space = el->addr - c->elem[el->prev_index].addr_after;	// space before this buffer
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 	if (cita_input_info)							// Extra info provided through a global pointer
-		strncpy(&el->extra.info, cita_input_info, sizeof(el->extra.info));
+		strncpy((char *) &el->extra.info, cita_input_info, sizeof(el->extra.info));
 
 	// Insert our element in the chain
 	c->elem[el->prev_index].next_index = index;
