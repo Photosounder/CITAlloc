@@ -1,5 +1,6 @@
 #ifdef __wasm__
 
+// Implementation part that suppresses the default allocator
 #ifdef CITA_WASM_IMPLEMENTATION_PART1
 
   // Needed to stop the linker from adding the default implementation
@@ -11,6 +12,7 @@
 
 #else // CITA_WASM_IMPLEMENTATION_PART1
 
+// Header part
   #ifndef H_CITA_WASM
   #define H_CITA_WASM
   
@@ -30,6 +32,7 @@
   
   #endif // H_CITA_WASM
   
+// Core implementation
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
     #define CITA_ALIGN 16
@@ -38,7 +41,9 @@
     #define CITA_MEM_START ((size_t)&__heap_base)
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
     #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16)
-    #define CITA_REPORT(fmt, ...) { fprintf(stderr, (fmt"\n"), ##__VA_ARGS__); fflush(stdout); wahe_run_command("Debug break"); }
+    //#define CITA_REPORT(fmt, ...) { fprintf(stderr, (fmt"\n"), ##__VA_ARGS__); fflush(stdout); wahe_run_command("Debug break"); }
+    char cita_report_cmd[256];
+    #define CITA_REPORT(fmt, ...) { sprintf(cita_report_cmd, "Print "fmt, ##__VA_ARGS__); wahe_run_command(cita_report_cmd); wahe_run_command("Debug break"); }
     
     #define CITA_IMPLEMENTATION
     #include "cit_alloc.h"

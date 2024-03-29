@@ -75,7 +75,9 @@ extern char *cita_input_info;
 #ifdef CITA_IMPLEMENTATION
 
 #include <stdint.h>
-#include <string.h>
+#ifndef CITA_EXCLUDE_STRING_H
+  #include <string.h>
+#endif
 
 typedef struct
 {
