@@ -282,7 +282,7 @@ void cita_free_core(void *ptr, int allow_memset)
 	c->elem[el->next_index].prev_index = el->prev_index;
 
 	// Update the size of the free space
-	c->elem[el->prev_index].after_space = c->elem[el->next_index].addr - c->elem[el->prev_index].addr_after;
+	c->elem[el->prev_index].after_space = el->next_index ? c->elem[el->next_index].addr - c->elem[el->prev_index].addr_after : 0;
 
 	// Indicate availability and link to the previous available element
 	el->addr = el->addr_after = el->after_space = 0;
