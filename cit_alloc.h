@@ -68,6 +68,8 @@ extern void cita_free(void *ptr);
 extern void *cita_calloc(size_t nmemb, size_t size);
 extern void *cita_realloc(void *ptr, size_t size);
 
+extern int cita_check_links(const char *func, int line);
+
 extern char *cita_input_info;
 
 #endif // H_CITA
@@ -105,6 +107,7 @@ typedef struct
 cita_table_t *cita_table=NULL;
 #define c cita_table
 char *cita_input_info=NULL;
+int cita_event_counter = 0;
 
 size_t cita_align_down(size_t addr)
 {
@@ -136,6 +139,47 @@ void cita_enlarge_memory(size_t req)
 
 	// Erase new range
 	cita_erase_to_mem_end(old_size);
+}
+
+int cita_check_links(const char *func, int line)
+{
+	int32_t ir;
+	size_t lut_base = 16;
+	int8_t *lut = (int8_t *) lut_base;
+	memset(lut, 0, c->elem_count);
+
+	// Go through each link to make sure they point to each other
+	for (ir=0; ir < c->elem_count; ir++)
+		if (c->elem[ir].next_index > -1)
+		{
+			if (c->elem[c->elem[ir].next_index].prev_index != ir)
+				CITA_REPORT("cita_check_links(%s:%d) elem[%d].next_index = %d but elem[%d].prev_index = %d", func, line, ir, c->elem[ir].next_index, c->elem[ir].next_index, c->elem[c->elem[ir].next_index].prev_index);
+
+			if (c->elem[c->elem[ir].prev_index].next_index != ir)
+				CITA_REPORT("cita_check_links(%s:%d) elem[%d].prev_index = %d but elem[%d].next_index = %d", func, line, ir, c->elem[ir].prev_index, c->elem[ir].prev_index, c->elem[c->elem[ir].prev_index].next_index);
+		}
+
+	// Go through the chain and mark each element
+	for (ir=0; lut[ir] == 0; ir = c->elem[ir].next_index)
+		lut[ir]++;
+
+	// Go through each element to see if any weren't marked
+	int unmarked_count = 0;
+	for (ir=0; ir < c->elem_count; ir++)
+		if (c->elem[ir].next_index > -1 && lut[ir] != 1)
+			unmarked_count++;
+
+	// Report anomalies
+	if (unmarked_count)
+		CITA_REPORT("cita_check_links(%s:%d) found %d unlinked elements", func, line, unmarked_count);
+	return unmarked_count;
+}
+
+int cita_check_links_internal(const char *func, int line)
+{
+#ifdef CITA_ALWAYS_CHECK_LINKS
+	return cita_check_links(func, line);
+#endif
 }
 
 void cita_table_init()
@@ -204,6 +248,8 @@ int32_t cita_table_find_buffer(size_t addr)
 
 void cita_free_core(void *ptr, int allow_memset)
 {
+	cita_event_counter++;
+	cita_check_links_internal(__func__, __LINE__);
 	size_t addr = (size_t) ptr;
 
 	if (ptr == NULL)
@@ -244,6 +290,8 @@ void cita_free_core(void *ptr, int allow_memset)
 	el->prev_index = c->available_index;
 	c->available_index = index;
 	el->extra.time_modified = c->timestamp;
+
+	cita_check_links_internal(__func__, __LINE__);
 }
 
 void cita_free(void *ptr)
@@ -254,6 +302,8 @@ void cita_free(void *ptr)
 void *cita_malloc(size_t size)
 {
 	cita_table_init();
+	cita_event_counter++;
+	cita_check_links_internal(__func__, __LINE__);
 
 	int32_t index = c->available_index;
 
@@ -345,6 +395,7 @@ void *cita_malloc(size_t size)
 		}
 	}
 
+	cita_check_links_internal(__func__, __LINE__);
 	return (void *) el->addr;
 }
 
@@ -360,6 +411,8 @@ void *cita_realloc(void *ptr, size_t size)
 	size_t addr = (size_t) ptr;
 
 	cita_table_init();
+	cita_event_counter++;
+	cita_check_links_internal(__func__, __LINE__);
 
 	if (ptr == NULL)
 		return cita_malloc(size);
@@ -426,6 +479,7 @@ void *cita_realloc(void *ptr, size_t size)
 		el->extra.time_modified = c->timestamp;
 	}
 
+	cita_check_links_internal(__func__, __LINE__);
 	return (void *) el->addr;
 }
 
