@@ -180,6 +180,7 @@ int cita_check_links_internal(const char *func, int line)
 #ifdef CITA_ALWAYS_CHECK_LINKS
 	return cita_check_links(func, line);
 #endif
+	return 0;
 }
 
 void cita_table_init()
