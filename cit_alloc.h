@@ -35,7 +35,7 @@ How can the information table be read correctly:
 - Following this signature, a 4-byte integer indicates the offset
   from CITA_MEM_START to a string that contains enough information
   to infer how to decode the rest of the data, such as the CIT
-  Alloc version or the size of pointers.
+  Alloc version or the size of various table elements.
 - Consult cita_table_t to find data at the right offsets, but keep
   in mind that the offset will be different depending on whether
   it's in 32 or 64 bits (for instance you might have a 64-bit host
@@ -57,6 +57,9 @@ Optional:
 CITA_FREE_PATTERN: A byte pattern, e.g. 0xE6, that if set will be
   used to erase all unused bytes between CITA_MEM_START and
   CITA_MEM_END
+CITA_ALWAYS_CHECK_LINKS: All functions will check the integrity of
+  the links between the table elements
+CITA_EXCLUDE_STRING_H: To avoid including <string.h>
 
 */
 
@@ -84,7 +87,8 @@ extern char *cita_input_info;
 typedef struct
 {
 	int32_t time_created, time_modified;
-	char info[64-20-8];
+	int8_t link;
+	char info[80-20-9];
 } cita_extra_t;
 
 typedef struct
@@ -101,7 +105,7 @@ typedef struct
 	volatile int32_t timestamp;	// meant to be updated by the host
 	cita_elem_t *elem;
 	size_t elem_count, elem_as;
-	char cita_version[16];
+	char cita_version[52];
 } cita_table_t;
 
 cita_table_t *cita_table=NULL;
@@ -144,9 +148,6 @@ void cita_enlarge_memory(size_t req)
 int cita_check_links(const char *func, int line)
 {
 	int32_t ir;
-	size_t lut_base = 16;
-	int8_t *lut = (int8_t *) lut_base;
-	memset(lut, 0, c->elem_count);
 
 	// Go through each link to make sure they point to each other
 	for (ir=0; ir < c->elem_count; ir++)
@@ -160,14 +161,20 @@ int cita_check_links(const char *func, int line)
 		}
 
 	// Go through the chain and mark each element
-	for (ir=0; lut[ir] == 0; ir = c->elem[ir].next_index)
-		lut[ir]++;
+	for (ir=0; c->elem[ir].extra.link == 0; ir = c->elem[ir].next_index)
+		c->elem[ir].extra.link++;
 
 	// Go through each element to see if any weren't marked
 	int unmarked_count = 0;
 	for (ir=0; ir < c->elem_count; ir++)
-		if (c->elem[ir].next_index > -1 && lut[ir] != 1)
+	{
+		if (c->elem[ir].next_index > -1 && c->elem[ir].extra.link != 1)
+		{
 			unmarked_count++;
+			CITA_PRINT("cita_check_links(): elem[%d] is unlinked, prev %d next %d", ir, c->elem[ir].prev_index, c->elem[ir].next_index);
+		}
+		c->elem[ir].extra.link = 0;
+	}
 
 	// Report anomalies
 	if (unmarked_count)
@@ -196,11 +203,24 @@ void cita_table_init()
 
 	// Write signature and version so the host knows it's CIT Alloc
 	memcpy(c->cita_signature, "CITA", 4);
+
+	// Write version for the viewer to be able to parse the table
 	c->version_offset = c->cita_version - c->cita_signature;
-	if (sizeof(size_t) == 4)
-		memcpy(c->cita_version, "CITA 1.0 32-bit", 16);
-	else
-		memcpy(c->cita_version, "CITA 1.0 64-bit", 16);
+	int iv = 0;
+	memcpy(&c->cita_version[iv], "CITA 1.0\nAddress ", 17);			iv += 17;
+	c->cita_version[iv] = '0' + sizeof(size_t);				iv += 1;
+	memcpy(&c->cita_version[iv], "\nIndex ", 7);				iv += 7;
+	c->cita_version[iv] = '0' + sizeof(c->elem->prev_index);		iv += 1;
+	memcpy(&c->cita_version[iv], "\nTime ", 6);				iv += 6;
+	c->cita_version[iv] = '0' + sizeof(c->elem->extra.time_created);	iv += 1;
+	memcpy(&c->cita_version[iv], "\nLink ", 6);				iv += 6;
+	c->cita_version[iv] = '0' + sizeof(c->elem->extra.link);		iv += 1;
+	memcpy(&c->cita_version[iv], "\nInfo ", 6);				iv += 6;
+	size_t s = sizeof(c->elem->extra.info);
+	if (s / 100) { c->cita_version[iv] = '0' + s / 100; s %= 100;		iv += 1; }
+	if (s / 10)  { c->cita_version[iv] = '0' + s / 10;  s %= 10;		iv += 1; }
+	c->cita_version[iv] = '0' + s;						iv += 1;
+	c->cita_version[iv] = '\0';						iv += 1;
 
 	// Indicate that there's no available element
 	c->available_index = -1;
@@ -220,7 +240,8 @@ void cita_table_init()
 	el->addr = (size_t) c;
 	el->addr_after = (size_t) c->elem;
 	el->after_space = 0;
-	strncpy((char *) &el->extra.info, "CITA base", sizeof(el->extra.info));
+	el->extra.link = 0;
+	strncpy(el->extra.info, "CITA base", sizeof(el->extra.info));
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
 
 	// Add elem 1 which will always be the table
@@ -372,8 +393,10 @@ void *cita_malloc(size_t size)
 	el->after_space = c->elem[el->next_index].addr - el->addr_after;			// space after this buffer
 	c->elem[el->prev_index].after_space = el->addr - c->elem[el->prev_index].addr_after;	// space before this buffer
 	el->extra.time_created = el->extra.time_modified = c->timestamp;
-	if (cita_input_info)							// Extra info provided through a global pointer
-		strncpy((char *) &el->extra.info, cita_input_info, sizeof(el->extra.info));
+	el->extra.link = 0;
+	memset(el->extra.info, 0, sizeof(el->extra.info));
+	if (cita_input_info)						// Extra info provided through a global pointer
+		strncpy(el->extra.info, cita_input_info, sizeof(el->extra.info));
 
 	// Insert our element in the chain
 	c->elem[el->prev_index].next_index = index;

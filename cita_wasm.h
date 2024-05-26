@@ -42,7 +42,8 @@
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
     #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16)
     char cita_report_cmd[256];
-    #define CITA_REPORT(fmt, ...) { sprintf(cita_report_cmd, "Print "fmt, ##__VA_ARGS__); wahe_run_command(cita_report_cmd); wahe_run_command("Debug break"); }
+    #define CITA_PRINT(fmt, ...) { sprintf(cita_report_cmd, "Print "fmt, ##__VA_ARGS__); wahe_run_command(cita_report_cmd); }
+    #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) wahe_run_command("Debug break"); }
     
     #define CITA_IMPLEMENTATION
     #include "cit_alloc.h"
