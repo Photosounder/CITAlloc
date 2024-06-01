@@ -29,6 +29,14 @@
     
     extern size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line);
     #define alloc_enough(b, nc, acp, se, ir)	(*acp) = cita_wasm_alloc_enough_pattern(b, nc, (*acp), se, ir, 0, __FILE__, __func__, __LINE__)
+
+    extern const char *cita_get_filename(const char *path);
+    extern char input_info[60];
+    #define ADD_CITA_INFO \
+	if (cita_input_info==NULL) { \
+		int ret = snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
+		cita_input_info = input_info; \
+		}
   
   #endif // H_CITA_WASM
   
@@ -50,7 +58,7 @@
 
 char input_info[60];
 
-static const char *cita_get_filename(const char *path)
+const char *cita_get_filename(const char *path)
 {
 	for (int i=strlen(path)-1; i >= 0; i--)
 		if (path[i] == '/' || path[i] == '\\')
@@ -58,17 +66,12 @@ static const char *cita_get_filename(const char *path)
 	return path;
 }
 
-#define ADD_CITA_INFO \
-	if (cita_input_info==NULL) { \
-		int ret = snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
-		cita_input_info = input_info; \
-		}
-
 void *cita_wasm_malloc(size_t size, const char *filename, const char *func, int line)
 {
+	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_malloc(size);
-	cita_input_info = NULL;
+	if (clear_info) cita_input_info = NULL;
 	return ptr;
 }
 
@@ -79,17 +82,19 @@ void cita_wasm_free(void *ptr, const char *filename, const char *func, int line)
 
 void *cita_wasm_calloc(size_t nmemb, size_t size, const char *filename, const char *func, int line)
 {
+	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_calloc(nmemb, size);
-	cita_input_info = NULL;
+	if (clear_info) cita_input_info = NULL;
 	return ptr;
 }
 
 void *cita_wasm_realloc(void *ptr, size_t size, const char *filename, const char *func, int line)
 {
+	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *new_ptr = cita_realloc(ptr, size);
-	cita_input_info = NULL;
+	if (clear_info) cita_input_info = NULL;
 	return new_ptr;
 }
 
@@ -104,9 +109,10 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 		newsize = ceil((double) needed_count * inc_ratio);
 
 		// Try realloc to the new larger size
+		int clear_info = (cita_input_info == NULL);
 		ADD_CITA_INFO
 		p = cita_realloc(*buffer, newsize * size_elem);
-		cita_input_info = NULL;
+		if (clear_info) cita_input_info = NULL;
 
 		if (p == NULL)
 		{
