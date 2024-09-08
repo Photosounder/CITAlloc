@@ -66,12 +66,15 @@ CITA_EXCLUDE_STRING_H: To avoid including <string.h>
 #ifndef H_CITA
 #define H_CITA
 
+#include <stdint.h>
+
 extern void *cita_malloc(size_t size);
 extern void cita_free(void *ptr);
 extern void *cita_calloc(size_t nmemb, size_t size);
 extern void *cita_realloc(void *ptr, size_t size);
 
 extern int cita_check_links(const char *func, int line);
+extern int32_t cita_table_find_buffer(size_t addr);
 
 extern char *cita_input_info;
 
@@ -79,7 +82,6 @@ extern char *cita_input_info;
 
 #ifdef CITA_IMPLEMENTATION
 
-#include <stdint.h>
 #ifndef CITA_EXCLUDE_STRING_H
   #include <string.h>
 #endif
