@@ -6,7 +6,7 @@ This is a malloc/free/realloc replacement meant mainly for WebAssembly modules b
 
 CIT Alloc also reports helpful errors with a maximum of detail, for instance attempting to free() or realloc() an address that is in the middle of an existing buffer will report not only the illegal call but also report inside which buffer that address is found, complete with information about the line of code that allocated that buffer in the first place.
 
-CIT Alloc can also optionally erase all the unused bytes in the given memory space, so for instance when I use it in my WebAssembly modules all the unused bytes in the heap are always set to 0xB6. This helps keep a very clean heap that makes more sense when looking at it and also can help catch bugs.
+CIT Alloc can also optionally erase all the unused bytes in the given memory space, so for instance when I use it in my WebAssembly modules all the unused bytes in the heap are always set to 0xC5. This helps keep a very clean heap that makes more sense when looking at it and also can help catch bugs.
 
 ## Files
 
