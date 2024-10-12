@@ -1,6 +1,6 @@
 :toc:
 
-# Compact Info Table Allocator
+= Compact Info Table Allocator
 
 This is a malloc/free/realloc replacement meant mainly for WebAssembly modules but adaptable to any situation. The goal is to have an allocator that stores information about all allocated buffers in a compact table that can easily be read and analysed, in my main case from the module's host. This is achieved by having a table that is treated just like any other dynamically allocated buffer and each entry shows which entries come before and after it, where the buffer starts and ends, how much free space is available between the buffer's end and the next buffer's start, when a buffer was created or last modified as well as extra info such as the name of the function, file and line number that the call originates from. All this information is meant to provide clarity so that we can clearly see what's going on in our code and use those insights to use dynamic allocation in more sensible ways.
 
@@ -8,15 +8,15 @@ CIT Alloc also reports helpful errors with a maximum of detail, for instance att
 
 CIT Alloc can also optionally erase all the unused bytes in the given memory space, so for instance when I use it in my WebAssembly modules all the unused bytes in the heap are always set to 0xC5. This helps keep a very clean heap that makes more sense when looking at it and also can help catch bugs.
 
-## Files
+== Files
 
-### cit_alloc.h
+=== cit_alloc.h
 
 This is the pure implementation of CIT Alloc, it doesn't contain anything specific to a platform or application, anything specific to it must be provided through a series of defines. This makes it quite flexible, for instance you could use it to give it control of an entire heap, as I do with WebAssembly modules, or you could make it exist entirely inside a buffer inside a program that wouldn't use CIT Alloc for its other allocations.
 
 The top of the file contains a lot of information about how it works and how to use it.
 
-### cita_wasm.h
+=== cita_wasm.h
 
 This is what I use to use CIT Alloc in my WebAssembly modules. The first part shows how I suppress the linker's inclusion of the default malloc implementation, then my function prototypes with extra arguments are defined and macros that turn simple standard calls into calls to my functions with extra arguments are defined. Then the necessary defines that CIT Alloc expects are defined and `cit_alloc.h` is directly included. The last part is the functions that take the place of the standard functions, put the extra info where CIT Alloc can use it and call the matching CIT Alloc functions.
 
@@ -41,7 +41,7 @@ In my module project, in the main header, `cita_wasm.h` is the first thing to be
 
 Part 1 is for having the functions that suppress the linking of the default allocator, part 2 is for the actual implementation which needs functions defined in the headers above it.
 
-## External monitoring
+== External monitoring
 
 CIT Alloc is made so that the layout can be observed from outside of the module, so that the allocations of that module can be visualised in real time and understood clearly. This is a good way to see how memory is used inefficiently, how fragmented it might be, what buffers change over time and so you can easily verify if you have leaks or anything in memory that shouldn't be there anymore. My current visualisation module looks like this:
 
