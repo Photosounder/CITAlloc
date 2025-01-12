@@ -50,6 +50,7 @@ CITA_MEM_START: Start address of the memory where everything will
 CITA_MEM_END: A way to obtain the address of the end of the memory
 CITA_MEM_ENLARGE(new_end): A way to enlarge the memory, doesn't
   need to return anything
+CITA_PRINT(fmt, ...): A printf-like function to just print
 CITA_REPORT(fmt, ...): A printf-like function to report serious
   errors by the caller
 
