@@ -12,6 +12,13 @@ Besides the compact information table a second information buffer called the map
 
 Information in the table is customisable: indices can be 8, 16 or 32-bit integers (16-bit indices will allow for about 65,532 allocations as index 0 is the base, 1 is the table, 2 may be the optional map and `0xFFFF` is "not an index"), the creation and modification timestamps can be excluded, the link flag depends on whether link checking is done and the info string's length can be adjusted, even down to zero. So with 16-bit indices and 32-bit addresses we can store as little as 16 bytes per allocation.
 
+== External monitoring
+
+CIT Alloc is made so that the layout can be observed from outside of the module, so that the allocations of that module can be visualised in real time and understood clearly. This is a good way to see how memory is used inefficiently, how fragmented it might be, what buffers change over time and so you can easily verify if you have leaks or anything in memory that shouldn't be there anymore. My current visualisation module looks like this:
+
+:imagesdir: img
+image::screenshot1.png[screenshot1.png,align="center"]
+
 == Files
 
 === cit_alloc.h
@@ -44,13 +51,6 @@ In my module project, in the main header, `cita_wasm.h` is the first thing to be
 ```
 
 Part 1 is for having the functions that suppress the linking of the default allocator, part 2 is for the actual implementation which needs functions defined in the headers above it.
-
-== External monitoring
-
-CIT Alloc is made so that the layout can be observed from outside of the module, so that the allocations of that module can be visualised in real time and understood clearly. This is a good way to see how memory is used inefficiently, how fragmented it might be, what buffers change over time and so you can easily verify if you have leaks or anything in memory that shouldn't be there anymore. My current visualisation module looks like this:
-
-:imagesdir: img
-image::screenshot1.png[screenshot1.png,align="center"]
 
 == Threading
 
