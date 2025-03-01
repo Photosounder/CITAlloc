@@ -54,7 +54,7 @@ Part 1 is for having the functions that suppress the linking of the default allo
 
 == Threading
 
-There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the implementation file. It might look something like this:
+There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the platform implementation file. It might look something like this:
 
 ```C
 void cita_myplatform_free(void *ptr, const char *filename, const char *func, int line)
