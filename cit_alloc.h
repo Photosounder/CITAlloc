@@ -24,7 +24,6 @@ memory layout.
 	- Giving free/realloc a pointer that is inside a buffer
 	- Giving free/realloc a pointer that isn't in the heap
 	- Giving free/realloc a pointer that isn't found
-- Not thread-safe for now because I don't need it to be.
 - Any function can make cita_input_info point to a string to
   override any info until cita_input_info is set to NULL again.
   For instance you can do cita_input_info = "my_function():123";
