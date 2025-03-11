@@ -211,7 +211,7 @@ void cita_enlarge_memory(size_t req)
 
 	// Report failure to enlarge by enough
 	if (req > CITA_MEM_END)
-		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB)", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
+		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 
 	// Erase new range
 	cita_erase_to_mem_end(old_size);
@@ -239,10 +239,10 @@ int cita_check_links(const char *func, int line)
 		if (c->elem[ir].next_index != NAI)
 		{
 			if (c->elem[c->elem[ir].next_index].prev_index != ir)
-				CITA_REPORT("cita_check_links(%s:%d) elem[%d].next_index = %d but elem[%d].prev_index = %d", func, line, ir, c->elem[ir].next_index, c->elem[ir].next_index, c->elem[c->elem[ir].next_index].prev_index);
+				CITA_REPORT("cita_check_links(%s:%d) elem[%d].next_index = %d but elem[%d].prev_index = %d. Input info says \"%s\"", func, line, ir, c->elem[ir].next_index, c->elem[ir].next_index, c->elem[c->elem[ir].next_index].prev_index, cita_input_info);
 
 			if (c->elem[c->elem[ir].prev_index].next_index != ir)
-				CITA_REPORT("cita_check_links(%s:%d) elem[%d].prev_index = %d but elem[%d].next_index = %d", func, line, ir, c->elem[ir].prev_index, c->elem[ir].prev_index, c->elem[c->elem[ir].prev_index].next_index);
+				CITA_REPORT("cita_check_links(%s:%d) elem[%d].prev_index = %d but elem[%d].next_index = %d. Input info says \"%s\"", func, line, ir, c->elem[ir].prev_index, c->elem[ir].prev_index, c->elem[c->elem[ir].prev_index].next_index, cita_input_info);
 		}
 
 	// Go through the chain and mark each element
@@ -263,7 +263,7 @@ int cita_check_links(const char *func, int line)
 
 	// Report anomalies
 	if (unmarked_count)
-		CITA_REPORT("cita_check_links(%s:%d) found %d unlinked elements", func, line, unmarked_count);
+		CITA_REPORT("cita_check_links(%s:%d) found %d unlinked elements. Input info says \"%s\"", func, line, unmarked_count, cita_input_info);
 	return unmarked_count;
 }
 #endif
@@ -398,9 +398,9 @@ int32_t cita_table_find_buffer(size_t addr, int start_only)
 				return i;
 
 			#if CITA_INFO_LEN > 0
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\". Input info says \"%s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info, cita_input_info);
 			#else
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large.", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large. Input info says \"%s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, cita_input_info);
 			#endif
 			return NAI;
 		}
@@ -568,7 +568,7 @@ void *cita_malloc(size_t size)
 		// Report failure to obtain enough 
 		if (el->addr_after > CITA_MEM_END)
 		{
-			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB)", size, el->addr, el->addr_after, el->addr_after/1048576., CITA_MEM_END, CITA_MEM_END/1048576.);
+			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, el->addr, el->addr_after, el->addr_after/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 			cita_free((void *) el->addr);
 			return NULL;
 		}
