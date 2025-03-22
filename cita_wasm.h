@@ -34,7 +34,7 @@
     extern char input_info[60];
     #define ADD_CITA_INFO \
 	if (cita_input_info==NULL) { \
-		int ret = snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
+		snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
 		cita_input_info = input_info; \
 		}
   
