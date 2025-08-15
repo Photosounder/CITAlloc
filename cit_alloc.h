@@ -51,6 +51,10 @@ CITA_MEM_START: Start address of the memory where everything will
 CITA_MEM_END: A way to obtain the address of the end of the memory
 CITA_MEM_ENLARGE(new_end): A way to enlarge the memory, doesn't
   need to return anything
+CITA_PTR(addr): How to turn a CITA address into an actual pointer.
+  This enables the use of CITA inside buffers where "addresses"
+  are indices.
+CITA_ADDR(ptr): Does the reverse of CITA_PTR()
 CITA_PRINT(fmt, ...): A printf-like function to just print
 CITA_REPORT(fmt, ...): A printf-like function to report serious
   errors by the caller
@@ -65,6 +69,8 @@ CITA_ALWAYS_CHECK_LINKS: All functions will check the integrity of
   the links between the table elements
 CITA_EXCLUDE_STRING_H: To avoid including <string.h>
 CITA_EXCL_TIME: Exclude timestamps from the info table
+CITA_TLS: Storage-class specifier for globals
+CITA_ADDR_TYPE: Address type defined as uint?_t/size_t
 
 */
 
@@ -78,9 +84,18 @@ extern void cita_free(void *ptr);
 extern void *cita_calloc(size_t nmemb, size_t size);
 extern void *cita_realloc(void *ptr, size_t size);
 
-extern int32_t cita_table_find_buffer(size_t addr, int start_only);
+#ifndef CITA_ADDR_TYPE
+  #define CITA_ADDR_TYPE size_t
+#endif
 
-extern char *cita_input_info;
+#ifndef CITA_TLS
+  #define CITA_TLS
+#endif
+
+extern int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, int start_only);
+extern CITA_ADDR_TYPE cita_find_end_addr();
+
+CITA_TLS extern char *cita_input_info;
 
 #endif // H_CITA
 
@@ -113,7 +128,7 @@ typedef struct
 typedef struct
 {
 	CITA_INDEX_TYPE prev_index, next_index;
-	size_t addr, addr_after, after_space;
+	CITA_ADDR_TYPE addr, addr_after, after_space;
 	cita_extra_t extra;
 } cita_elem_t;
 
@@ -127,26 +142,26 @@ typedef struct
 	char cita_version[52];
 } cita_table_t;
 
-cita_table_t *cita_table=NULL;
+CITA_TLS cita_table_t *cita_table=NULL;
 #define c cita_table
-char *cita_input_info=NULL;
-int cita_event_counter = 0;
+CITA_TLS char *cita_input_info=NULL;
+CITA_TLS int cita_event_counter = 0;
 
-size_t cita_align_down(size_t addr)
+CITA_ADDR_TYPE cita_align_down(CITA_ADDR_TYPE addr)
 {
 	return addr & ~(CITA_ALIGN-1);
 }
 
-size_t cita_align_up(size_t addr)
+CITA_ADDR_TYPE cita_align_up(CITA_ADDR_TYPE addr)
 {
 	return cita_align_down(addr+CITA_ALIGN-1);
 }
 
-void cita_erase_to_mem_end(size_t start)
+void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 {
 	#ifdef CITA_FREE_PATTERN
 	if (start < CITA_MEM_END)
-		memset((void *) start, CITA_FREE_PATTERN, CITA_MEM_END - start);
+		memset(CITA_PTR(start), CITA_FREE_PATTERN, CITA_MEM_END - start);
 	#endif
 }
 
@@ -154,16 +169,16 @@ void cita_erase_to_mem_end(size_t start)
 size_t cita_map_count = 0;
 int8_t cita_map_update_skip = 0;
 
-void cita_map_update_range(size_t addr, size_t addr_after)
+void cita_map_update_range(CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_after)
 {
 	if (c->elem_count < 3 || cita_map_update_skip)
 		return;
 
-	CITA_INDEX_TYPE *map = (CITA_INDEX_TYPE *) c->elem[2].addr;
+	CITA_INDEX_TYPE *map = CITA_PTR(c->elem[2].addr);
 
 	// Determine the range in map cell indices
-	size_t im0 = (addr         - CITA_MEM_START) >> CITA_MAP_SCALE;
-	size_t im1 = (addr_after-1 - CITA_MEM_START) >> CITA_MAP_SCALE;
+	CITA_ADDR_TYPE im0 = (addr         - CITA_MEM_START) >> CITA_MAP_SCALE;
+	CITA_ADDR_TYPE im1 = (addr_after-1 - CITA_MEM_START) >> CITA_MAP_SCALE;
 
 	// Set the whole range to NAI
 	memset(&map[im0], 0xFF, (im1+1 - im0) * sizeof(CITA_INDEX_TYPE));
@@ -174,22 +189,22 @@ void cita_map_update_range(size_t addr, size_t addr_after)
 	}
 
 	// Start from the elem at the start of the previous non-NAI cell
-	size_t ie = NAI;
-	for (size_t im = im0 ? im0-1 : 0; ie == NAI; im--)
+	CITA_ADDR_TYPE ie = NAI;
+	for (CITA_ADDR_TYPE im = im0 ? im0-1 : 0; ie == NAI; im--)
 		ie = map[im];
-	size_t im_min = im0;
+	CITA_ADDR_TYPE im_min = im0;
 
 	do
 	{
-		size_t range0 = (c->elem[ie].addr         - CITA_MEM_START) >> CITA_MAP_SCALE;
-		size_t range1 = (c->elem[ie].addr_after-1 - CITA_MEM_START) >> CITA_MAP_SCALE;
+		CITA_ADDR_TYPE range0 = (c->elem[ie].addr         - CITA_MEM_START) >> CITA_MAP_SCALE;
+		CITA_ADDR_TYPE range1 = (c->elem[ie].addr_after-1 - CITA_MEM_START) >> CITA_MAP_SCALE;
 		range0 = im_min > range0 ? im_min : range0;
 
 		if (range0 > im1)
 			return;
 
 		// Set the elem's cell range to the elem's index
-		for (size_t im = range0; im <= range1; im++)
+		for (CITA_ADDR_TYPE im = range0; im <= range1; im++)
 			if (map[im] == NAI)
 				map[im] = ie;
 
@@ -200,27 +215,27 @@ void cita_map_update_range(size_t addr, size_t addr_after)
 }
 #endif
 
-void cita_enlarge_memory(size_t req)
+void cita_enlarge_memory(CITA_ADDR_TYPE req, int do_map)
 {
-	size_t old_size = CITA_MEM_END;
+	CITA_ADDR_TYPE old_size = CITA_MEM_END;
 	if (req > old_size)
-		CITA_MEM_ENLARGE(req);
+		CITA_MEM_ENLARGE(req)
 	else
 		return;
 
 	// Report failure to enlarge by enough
 	if (req > CITA_MEM_END)
-		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", old_size, old_size/1048576., req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", (size_t) old_size, old_size/1048576., (size_t) req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 
 	// Erase new range
 	cita_erase_to_mem_end(old_size);
 
 	#ifdef CITA_MAP_SCALE
 	// Enlarge map
-	if (cita_map_count < CITA_MAP_COUNT_MIN)
+	if (do_map && cita_map_count < CITA_MAP_COUNT_MIN)
 	{
 		cita_map_count = CITA_MAP_COUNT_MIN * 2;
-		cita_realloc((void *) c->elem[2].addr, cita_map_count * sizeof(CITA_INDEX_TYPE));
+		cita_realloc(CITA_PTR(c->elem[2].addr), cita_map_count * sizeof(CITA_INDEX_TYPE));
 
 		// Init new section to NAI
 		cita_map_update_range(CITA_MEM_START, CITA_MEM_END);
@@ -280,11 +295,14 @@ void cita_table_init()
 	if (c)
 		return;
 
+	// Enlarge memory if needed
+	cita_enlarge_memory(CITA_MEM_START + sizeof(cita_table_t), 0);
+
 	// Erase whole heap
 	cita_erase_to_mem_end(CITA_MEM_START);
 
 	// Allocate table structure
-	c = (cita_table_t *) CITA_MEM_START;
+	c = CITA_PTR(CITA_MEM_START);
 
 	// Write signature and version so the host knows it's CIT Alloc
 	memcpy(c->cita_signature, "CITA", 4);
@@ -293,7 +311,7 @@ void cita_table_init()
 	c->version_offset = c->cita_version - c->cita_signature;
 	int iv = 0;
 	memcpy(&c->cita_version[iv], "CITA 1.0\nAddress ", 17);			iv += 17;
-	c->cita_version[iv] = '0' + sizeof(size_t);				iv += 1;
+	c->cita_version[iv] = '0' + sizeof(CITA_ADDR_TYPE);			iv += 1;
 	memcpy(&c->cita_version[iv], "\nIndex ", 7);				iv += 7;
 	c->cita_version[iv] = '0' + sizeof(c->elem->prev_index);		iv += 1;
 
@@ -320,19 +338,19 @@ void cita_table_init()
 	c->available_index = NAI;
 
 	// Alloc table
-	c->elem = (cita_elem_t *) cita_align_up((size_t) c + sizeof(cita_table_t));
+	c->elem = CITA_PTR(cita_align_up(CITA_ADDR(c) + sizeof(cita_table_t)));
 	c->elem_count = 1;
 	c->elem_as = 16;	// can be changed
 
 	// Enlarge memory if needed
-	size_t table_end = (size_t) &c->elem[c->elem_as];
-	cita_enlarge_memory(table_end);
+	CITA_ADDR_TYPE table_end = CITA_ADDR(&c->elem[c->elem_as]);
+	cita_enlarge_memory(table_end, 0);
 
 	// Add elem 0 that represents the start of the memory and the table structure that never moves
 	cita_elem_t *el = &c->elem[0];
 	el->prev_index = el->next_index = 0;
-	el->addr = (size_t) c;
-	el->addr_after = (size_t) c->elem;
+	el->addr = CITA_ADDR(c);
+	el->addr_after = CITA_ADDR(c->elem);
 	el->after_space = 0;
 	#ifdef CITA_ALWAYS_CHECK_LINKS
 	el->extra.link = 0;
@@ -363,26 +381,26 @@ void cita_table_init()
 	#endif
 }
 
-int32_t cita_table_find_buffer(size_t addr, int start_only)
+int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, int start_only)
 {
 	int32_t i = 0;
 
 	// Basic address checks
 	if (addr < CITA_MEM_START)
 	{
-		CITA_REPORT("cita_table_find_buffer(%#zx): pointer isn't a heap address, heap starts at %#zx. Input info says \"%s\"", addr, CITA_MEM_START, cita_input_info);
+		CITA_REPORT("cita_table_find_buffer(%#zx): pointer isn't a heap address, heap starts at %#zx. Input info says \"%s\"", (size_t) addr, (size_t) CITA_MEM_START, cita_input_info);
 		return NAI;
 	}
 
 	if (addr >= CITA_MEM_END)
 	{
-		CITA_REPORT("cita_table_find_buffer(%#zx): pointer is outside of the memory which ends at %#zx. Input info says \"%s\"", addr, CITA_MEM_END, cita_input_info);
+		CITA_REPORT("cita_table_find_buffer(%#zx): pointer is outside of the memory which ends at %#zx. Input info says \"%s\"", (size_t) addr, (size_t) CITA_MEM_END, cita_input_info);
 		return NAI;
 	}
 
 	#ifdef CITA_MAP_SCALE
 	// Find a starting index from the map
-	CITA_INDEX_TYPE *map = (CITA_INDEX_TYPE *) c->elem[2].addr;
+	CITA_INDEX_TYPE *map = CITA_PTR(c->elem[2].addr);
 	i = map[(addr-CITA_MEM_START) >> CITA_MAP_SCALE];
 	if (i == NAI)
 		return NAI;
@@ -397,9 +415,9 @@ int32_t cita_table_find_buffer(size_t addr, int start_only)
 				return i;
 
 			#if CITA_INFO_LEN > 0
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\". Input info says \"%s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info, cita_input_info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\". Input info says \"%s\"", (size_t) addr, (size_t) addr-c->elem[i].addr, (size_t) addr-c->elem[i].addr, (size_t) c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info, cita_input_info);
 			#else
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large. Input info says \"%s\"", addr, addr-c->elem[i].addr, addr-c->elem[i].addr, c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, c->elem[i].addr_after-c->elem[i].addr, cita_input_info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large. Input info says \"%s\"", (size_t) addr, (size_t) addr-c->elem[i].addr, addr-c->elem[i].addr, (size_t) c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, cita_input_info);
 			#endif
 			return NAI;
 		}
@@ -415,7 +433,7 @@ void cita_free_core(void *ptr, int allow_memset)
 {
 	cita_event_counter++;
 	cita_check_links_internal(__func__, __LINE__);
-	size_t addr = (size_t) ptr;
+	CITA_ADDR_TYPE addr = CITA_ADDR(ptr);
 
 	if (ptr == NULL)
 		return;
@@ -424,20 +442,20 @@ void cita_free_core(void *ptr, int allow_memset)
 	int32_t index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
-		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", addr, cita_input_info);
+		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", (size_t) addr, cita_input_info);
 		return;
 	}
 
 	cita_elem_t *el = &c->elem[index];
 
 	#ifdef CITA_MAP_SCALE
-	size_t addr_after = el->addr_after;
+	CITA_ADDR_TYPE addr_after = el->addr_after;
 	#endif
 	
 	// Optionally erase the buffer data with a pattern
 	#ifdef CITA_FREE_PATTERN
 	if (allow_memset)
-		memset((void *) el->addr, CITA_FREE_PATTERN, el->addr_after - el->addr);
+		memset(CITA_PTR(el->addr), CITA_FREE_PATTERN, el->addr_after - el->addr);
 	#endif
 
 	// Link the linked elements together
@@ -562,13 +580,13 @@ void *cita_malloc(size_t size)
 		el->after_space = 0;
 
 		// Enlarge memory if needed
-		cita_enlarge_memory(el->addr_after);
+		cita_enlarge_memory(el->addr_after, 1);
 
 		// Report failure to obtain enough 
 		if (el->addr_after > CITA_MEM_END)
 		{
-			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, el->addr, el->addr_after, el->addr_after/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
-			cita_free((void *) el->addr);
+			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, (size_t) el->addr, (size_t) el->addr_after, el->addr_after/1048576., (size_t) CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+			cita_free(CITA_PTR(el->addr));
 			return NULL;
 		}
 	}
@@ -579,7 +597,7 @@ void *cita_malloc(size_t size)
 
 	cita_check_links_internal(__func__, __LINE__);
 
-	return (void *) el->addr;
+	return CITA_PTR(el->addr);
 }
 
 void *cita_calloc(size_t nmemb, size_t size)
@@ -591,7 +609,7 @@ void *cita_calloc(size_t nmemb, size_t size)
 
 void *cita_realloc(void *ptr, size_t size)
 {
-	size_t addr = (size_t) ptr;
+	CITA_ADDR_TYPE addr = CITA_ADDR(ptr);
 
 	cita_table_init();
 	cita_event_counter++;
@@ -604,19 +622,19 @@ void *cita_realloc(void *ptr, size_t size)
 	int32_t index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
-		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found. Input info says \"%s\"", addr, size, cita_input_info);
+		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found. Input info says \"%s\"", (size_t) addr, size, cita_input_info);
 		return NULL;
 	}
 
 	cita_elem_t *el = &c->elem[index];
 
 	// Check space from the start of this buffer to next buffer to see if there's already enough room
-	size_t space = c->elem[el->next_index].addr - el->addr;
+	CITA_ADDR_TYPE space = c->elem[el->next_index].addr - el->addr;
 	if (el->next_index == 0)	// if this buffer is at the end
 	{
 		// Enlarge memory if needed
 		if (el->addr + size > CITA_MEM_END)
-			cita_enlarge_memory(el->addr + size);
+			cita_enlarge_memory(el->addr + size, 1);
 
 		space = CITA_MEM_END - el->addr;
 	}
@@ -639,7 +657,7 @@ void *cita_realloc(void *ptr, size_t size)
 		if (index == 2)
 			cita_map_update_skip = 1;
 		#endif
-		cita_free_core(ptr, 0);		// the second argument preserves the data
+		cita_free_core(CITA_PTR(addr), 0);		// the second argument preserves the data
 		ptr = cita_malloc(size);
 		#ifdef CITA_MAP_SCALE
 		if (index == 2)
@@ -648,11 +666,11 @@ void *cita_realloc(void *ptr, size_t size)
 		if (index == 1)			// repoint c->elem if it's what we just moved
 			c->elem = ptr;
 		el = &c->elem[index];		// needed if it's c->elem we're reallocating
-		memmove(ptr, (void *) el_copy.addr, el_copy.addr_after - el_copy.addr);
+		memmove(ptr, CITA_PTR(el_copy.addr), el_copy.addr_after - el_copy.addr);
 
 		#ifdef CITA_FREE_PATTERN
 		// Avoid overlap
-		size_t erasable_top = el->addr + el_copy.addr_after - el_copy.addr;
+		CITA_ADDR_TYPE erasable_top = el->addr + el_copy.addr_after - el_copy.addr;
 		if (el->addr <= el_copy.addr && el_copy.addr < erasable_top)
 			el_copy.addr = el->addr_after;
 		if (el->addr <= el_copy.addr_after && el_copy.addr_after < erasable_top)
@@ -660,7 +678,7 @@ void *cita_realloc(void *ptr, size_t size)
 
 		// Clean the old data
 		if (el_copy.addr_after > el_copy.addr)
-			memset((void *) el_copy.addr, CITA_FREE_PATTERN, el_copy.addr_after - el_copy.addr);
+			memset(CITA_PTR(el_copy.addr), CITA_FREE_PATTERN, el_copy.addr_after - el_copy.addr);
 		#endif
 
 		// Copy extra info and set timestamp
@@ -671,7 +689,12 @@ void *cita_realloc(void *ptr, size_t size)
 	}
 
 	cita_check_links_internal(__func__, __LINE__);
-	return (void *) el->addr;
+	return CITA_PTR(el->addr);
+}
+
+CITA_ADDR_TYPE cita_find_end_addr()
+{
+	return c->elem[ c->elem[0].prev_index ].addr_after;
 }
 
 #undef c

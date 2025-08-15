@@ -52,6 +52,29 @@ In my module project, in the main header, `cita_wasm.h` is the first thing to be
 
 Part 1 is for having the functions that suppress the linking of the default allocator, part 2 is for the actual implementation which needs functions defined in the headers above it.
 
+=== cita_arena.h
+
+This implementation is meant not to replace the allocator but rather provide a sophisticated arena allocator, in other words it's meant so that a CITA memory can exist inside a buffer that can be enlarged by `realloc()`. The arena allocator internally uses addresses that are relative to the start of this memory buffer, as do the functions called by the user, so for instance `size_t my_buffer_addr = arena_malloc(&my_arena, 1024 * sizeof(int));` doesn't yield a pointer but rather an offset, a pointer to this allocated sub-buffer would be obtained by doing `int *ptr = &my_area.mem[my_buffer_addr];`.
+
+Very succinct example:
+```c
+#include <stdlib.h>
+#include <stdio.h>
+
+#define CITA_ARENA_IMPLEMENTATION
+#include "cita_arena.h"
+
+int main(int argc, char *argv[])
+{
+	cita_arena_t my_arena={0};
+	size_t addr = arena_malloc(&my_arena, 1024);
+	printf("addr = %#zx\n", addr);
+	return 0;
+}
+```
+
+Unlike most arena allocators which are very basic bump allocators and can't `free()` anything, this is a fully featured allocator that just uses a reallocatable buffer. One could even use it to create some kind of file format by allocating a bunch of subbuffers that can point to each other using addresses that are relative to the memory buffer, then save this memory buffer in its entirety to a file, then load this file and restore it as a CITA arena.
+
 == Threading
 
 There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the platform implementation file. It might look something like this:

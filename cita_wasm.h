@@ -43,16 +43,20 @@
 // Core implementation
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
+    #ifndef CITA_INDEX_TYPE
+      #define CITA_INDEX_TYPE uint16_t	// means there can only be 65535 allocations
+    #endif
     #define CITA_ALIGN 16		// all allocations will be aligned to 16 bytes
-    #define CITA_INDEX_TYPE uint16_t	// means there can only be 65535 allocations
     #define CITA_MAP_SCALE 13		// means a map cell covers 8 kB
     #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat
     #define CITA_INFO_LEN 56
 
     extern unsigned char __heap_base;
-    #define CITA_MEM_START ((size_t)&__heap_base)
+    #define CITA_MEM_START ((size_t) &__heap_base)
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
     #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16)
+    #define CITA_PTR(addr) ((void *) (addr))
+    #define CITA_ADDR(ptr) ((size_t) (ptr))
 
     char cita_report_cmd[256];
     #define CITA_PRINT(fmt, ...) { snprintf(cita_report_cmd, sizeof(cita_report_cmd), "Print "fmt, ##__VA_ARGS__); wahe_run_command(cita_report_cmd); }
