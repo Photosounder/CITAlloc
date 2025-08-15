@@ -32,6 +32,8 @@
   extern size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buffer_addr, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line);
   #define arena_alloc_enough(a, b, nc, acp, se, ir)	(*acp) = cita_arena_alloc_enough_pattern(a, b, nc, (*acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
 
+  extern size_t cita_arena_get_min_size(cita_arena_t *arena);
+
   extern const char *cita_get_filename(const char *path);
   extern char input_info[60];
   #define ADD_CITA_INFO \
@@ -154,6 +156,12 @@ size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buff
 	}
 
 	return alloc_count;
+}
+
+size_t cita_arena_get_min_size(cita_arena_t *arena)
+{
+	cita_table = (cita_table_t *) cita_arena_global->mem;
+	return cita_find_end_addr();
 }
 
 #endif // CITA_ARENA_IMPLEMENTATION

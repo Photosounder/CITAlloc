@@ -56,7 +56,7 @@ Part 1 is for having the functions that suppress the linking of the default allo
 
 This implementation is meant not to replace the allocator but rather provide a sophisticated arena allocator, in other words it's meant so that a CITA memory can exist inside a buffer that can be enlarged by `realloc()`. The arena allocator internally uses addresses that are relative to the start of this memory buffer, as do the functions called by the user, so for instance `size_t my_buffer_addr = arena_malloc(&my_arena, 1024 * sizeof(int));` doesn't yield a pointer but rather an offset, a pointer to this allocated sub-buffer would be obtained by doing `int *ptr = &my_area.mem[my_buffer_addr];`.
 
-Very succinct example:
+A very succinct example:
 ```c
 #include <stdlib.h>
 #include <stdio.h>
@@ -68,12 +68,14 @@ int main(int argc, char *argv[])
 {
 	cita_arena_t my_arena={0};
 	size_t addr = arena_malloc(&my_arena, 1024);
-	printf("addr = %#zx\n", addr);
+	printf("addr = %zd (%#zx), arena data size: %zd, arena allocated size: %zd\n", addr, addr, cita_arena_get_min_size(&my_arena), my_arena.mem_as);
 	return 0;
 }
 ```
 
-Unlike most arena allocators which are very basic bump allocators and can't `free()` anything, this is a fully featured allocator that just uses a reallocatable buffer. One could even use it to create some kind of file format by allocating a bunch of subbuffers that can point to each other using addresses that are relative to the memory buffer, then save this memory buffer in its entirety to a file, then load this file and restore it as a CITA arena.
+This displays `addr = 1392 (0x570), arena data size: 2416, arena allocated size: 65536`
+
+Unlike most arena allocators which are very basic bump allocators and can't `free()` anything, this is a fully featured allocator that just uses a reallocatable buffer. One could even use it to create some kind of file format by allocating a bunch of sub-buffers that can point to each other using addresses that are relative to the memory buffer, then save this memory buffer in its entirety to a file, then load this file and restore it as a CITA arena.
 
 == Threading
 
