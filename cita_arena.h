@@ -160,7 +160,7 @@ size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buff
 
 size_t cita_arena_get_min_size(cita_arena_t *arena)
 {
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	cita_table = (cita_table_t *) arena->mem;
 	return cita_find_end_addr();
 }
 

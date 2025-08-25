@@ -54,7 +54,7 @@
     extern unsigned char __heap_base;
     #define CITA_MEM_START ((size_t) &__heap_base)
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
-    #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16)
+    #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16);
     #define CITA_PTR(addr) ((void *) (addr))
     #define CITA_ADDR(ptr) ((size_t) (ptr))
 
