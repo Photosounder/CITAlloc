@@ -331,7 +331,7 @@ void cita_table_init()
 	if (s / 100) { c->cita_version[iv] = '0' + s / 100; s %= 100;		iv += 1; }
 	if (s / 10)  { c->cita_version[iv] = '0' + s / 10;  s %= 10;		iv += 1; }
 	c->cita_version[iv] = '0' + s;						iv += 1;
-	c->cita_version[iv] = '\0';						iv += 1;
+	c->cita_version[iv] = '\0';						/*iv += 1;*/
 	#endif
 
 	// Indicate that there's no available element

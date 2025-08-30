@@ -28,7 +28,7 @@
     #define realloc(p,s) cita_wasm_realloc((p), (s), __FILE_NAME__, __func__, __LINE__)
     
     extern size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line);
-    #define alloc_enough(b, nc, acp, se, ir)	(*acp) = cita_wasm_alloc_enough_pattern(b, nc, (*acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
+    #define alloc_enough(b, nc, acp, se, ir)	*(acp) = cita_wasm_alloc_enough_pattern(b, nc, *(acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
 
     extern const char *cita_get_filename(const char *path);
     extern char input_info[60];

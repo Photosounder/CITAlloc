@@ -30,7 +30,7 @@
   #define arena_realloc(a,p,s) cita_arena_realloc((a), (p), (s), __FILE_NAME__, __func__, __LINE__)
   
   extern size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buffer_addr, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line);
-  #define arena_alloc_enough(a, b, nc, acp, se, ir)	(*acp) = cita_arena_alloc_enough_pattern(a, b, nc, (*acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
+  #define arena_alloc_enough(a, b, nc, acp, se, ir)	*(acp) = cita_arena_alloc_enough_pattern(a, b, nc, *(acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
 
   extern size_t cita_arena_get_min_size(cita_arena_t *arena);
 
