@@ -54,7 +54,7 @@ Part 1 is for having the functions that suppress the linking of the default allo
 
 === cita_arena.h
 
-This implementation is meant not to replace the allocator but rather provide a sophisticated arena allocator, in other words it's meant so that a CITA memory can exist inside a buffer that can be enlarged by `realloc()`. The arena allocator internally uses addresses that are relative to the start of this memory buffer, as do the functions called by the user, so for instance `size_t my_buffer_addr = arena_malloc(&my_arena, 1024 * sizeof(int));` doesn't yield a pointer but rather an offset, a pointer to this allocated sub-buffer would be obtained by doing `int *ptr = &my_area.mem[my_buffer_addr];`.
+This implementation is meant not to replace the allocator but rather provide a sophisticated arena allocator, in other words it's meant so that a CITA memory can exist inside a buffer that can be enlarged by `realloc()`. The arena allocator internally uses addresses that are relative to the start of this memory buffer, as do the functions called by the user, so for instance `size_t my_buffer_addr = arena_malloc(&my_arena, 1024 * sizeof(int));` doesn't yield a pointer but rather an offset, a pointer to this allocated sub-buffer would be obtained by doing `int *ptr = &my_arena.mem[my_buffer_addr];`.
 
 A very succinct example:
 ```c
