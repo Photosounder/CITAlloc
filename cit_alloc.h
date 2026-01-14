@@ -217,18 +217,18 @@ void cita_map_update_range(CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_after)
 
 void cita_enlarge_memory(CITA_ADDR_TYPE req, int do_map)
 {
-	CITA_ADDR_TYPE old_size = CITA_MEM_END;
-	if (req > old_size)
+	CITA_ADDR_TYPE old_end = CITA_MEM_END;
+	if (req > old_end)
 		CITA_MEM_ENLARGE(req)
 	else
 		return;
 
 	// Report failure to enlarge by enough
 	if (req > CITA_MEM_END)
-		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", (size_t) old_size, old_size/1048576., (size_t) req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", (size_t) old_end, old_end/1048576., (size_t) req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 
 	// Erase new range
-	cita_erase_to_mem_end(old_size);
+	cita_erase_to_mem_end(old_end);
 
 	#ifdef CITA_MAP_SCALE
 	// Enlarge map
