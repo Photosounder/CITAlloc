@@ -77,6 +77,36 @@ This displays `addr = 1392 (0x570), arena data size: 2416, arena allocated size:
 
 Unlike most arena allocators which are very basic bump allocators and can't `free()` anything, this is a fully featured allocator that just uses a reallocatable buffer. One could even use it to create some kind of file format by allocating a bunch of sub-buffers that can point to each other using addresses that are relative to the memory buffer, then save this memory buffer in its entirety to a file, then load this file and restore it as a CITA arena.
 
+=== cita_windows.h
+
+This implementation replaces the allocator when compiling to native Windows binaries. It works by reserving one large section of virtual memory (currently 256 GB) and progressively commiting more of it as needed, with this buffer being treated as the whole heap. A mutex is used so that allocations can be done in parallel.
+
+A basic example:
+```c
+#include <stdlib.h>
+#include <stdio.h>
+
+#define CITA_WIN_IMPLEMENTATION
+#include "cita_windows.h"
+
+int main(int argc, char *argv[])
+{
+	char *ptr = malloc(1<<30);
+	printf("CITA buffer at %#zx, buffer size %zd, malloc returned %#zx (offset %#zx)\n", (size_t) cita_buffer.mem, (cita_buffer.mem_end-(size_t) cita_buffer.mem), (size_t) ptr, (size_t) ptr-(size_t) cita_buffer.mem);
+
+	ptr = malloc(1024);
+	printf("CITA buffer at %#zx, buffer size %zd, malloc returned %#zx (offset %#zx)\n", (size_t) cita_buffer.mem, (cita_buffer.mem_end-(size_t) cita_buffer.mem), (size_t) ptr, (size_t) ptr-(size_t) cita_buffer.mem);
+
+	return 0;
+}
+```
+
+This prints:
+```
+CITA buffer at 0x1a840840000, buffer size 1074270208, malloc returned 0x1a840840670 (offset 0x670)
+CITA buffer at 0x1a840840000, buffer size 1074270208, malloc returned 0x1a8808c0680 (offset 0x40080680)
+```
+
 == Threading
 
 There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the platform implementation file. It might look something like this:
