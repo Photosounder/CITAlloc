@@ -116,7 +116,6 @@ size_t windows_memory_max_usable_block()
 		address = (char *) mbi.BaseAddress + mbi.RegionSize;
 	}
 
-	CITA_PRINT("max_usable_block %zd GB\n", max_usable_block>>30);
 	return max_usable_block;
 }
 
