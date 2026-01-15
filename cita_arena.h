@@ -61,7 +61,7 @@
   #define CITA_MEM_END (cita_arena_global->mem_as)
   #define CITA_MEM_ENLARGE(new_end) { cita_arena_global->mem_as = ((new_end) + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1); cita_arena_global->mem = realloc(cita_arena_global->mem, cita_arena_global->mem_as); }
   #define CITA_PTR(addr) ((void *) &cita_arena_global->mem[addr])
-  #define CITA_ADDR(ptr) ((ptr) ? (CITA_ADDR_TYPE) ((size_t) (ptr) - (size_t) cita_arena_global->mem) : 0)
+  #define CITA_ADDR(ptr) ((ptr) ? (CITA_ADDR_TYPE) ((uintptr_t) (ptr) - (uintptr_t) cita_arena_global->mem) : 0)
 
   #ifndef CITA_PRINT
     #define CITA_PRINT(fmt, ...) { fprintf(stderr, fmt"\n", ##__VA_ARGS__); }

@@ -70,7 +70,7 @@ CITA_ALWAYS_CHECK_LINKS: All functions will check the integrity of
 CITA_EXCLUDE_STRING_H: To avoid including <string.h>
 CITA_EXCL_TIME: Exclude timestamps from the info table
 CITA_TLS: Storage-class specifier for globals
-CITA_ADDR_TYPE: Address type defined as uint?_t/size_t
+CITA_ADDR_TYPE: Address type defined as uint?_t
 
 */
 
@@ -85,7 +85,7 @@ extern void *cita_calloc(size_t nmemb, size_t size);
 extern void *cita_realloc(void *ptr, size_t size);
 
 #ifndef CITA_ADDR_TYPE
-  #define CITA_ADDR_TYPE size_t
+  #define CITA_ADDR_TYPE uintptr_t
 #endif
 
 #ifndef CITA_TLS
@@ -225,7 +225,7 @@ void cita_enlarge_memory(CITA_ADDR_TYPE req, int do_map)
 
 	// Report failure to enlarge by enough
 	if (req > CITA_MEM_END)
-		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", (size_t) old_end, old_end/1048576., (size_t) req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+		CITA_REPORT("cita_enlarge_memory(): requested increase from %#zx (%.1f MB) to at least %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", (uintptr_t) old_end, old_end/1048576., (uintptr_t) req, req/1048576., CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 
 	// Erase new range
 	cita_erase_to_mem_end(old_end);
@@ -388,13 +388,13 @@ int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, int start_only)
 	// Basic address checks
 	if (addr < CITA_MEM_START)
 	{
-		CITA_REPORT("cita_table_find_buffer(%#zx): pointer isn't a heap address, heap starts at %#zx. Input info says \"%s\"", (size_t) addr, (size_t) CITA_MEM_START, cita_input_info);
+		CITA_REPORT("cita_table_find_buffer(%#zx): pointer isn't a heap address, heap starts at %#zx. Input info says \"%s\"", (uintptr_t) addr, (uintptr_t) CITA_MEM_START, cita_input_info);
 		return NAI;
 	}
 
 	if (addr >= CITA_MEM_END)
 	{
-		CITA_REPORT("cita_table_find_buffer(%#zx): pointer is outside of the memory which ends at %#zx. Input info says \"%s\"", (size_t) addr, (size_t) CITA_MEM_END, cita_input_info);
+		CITA_REPORT("cita_table_find_buffer(%#zx): pointer is outside of the memory which ends at %#zx. Input info says \"%s\"", (uintptr_t) addr, (uintptr_t) CITA_MEM_END, cita_input_info);
 		return NAI;
 	}
 
@@ -415,9 +415,9 @@ int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, int start_only)
 				return i;
 
 			#if CITA_INFO_LEN > 0
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\". Input info says \"%s\"", (size_t) addr, (size_t) addr-c->elem[i].addr, (size_t) addr-c->elem[i].addr, (size_t) c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info, cita_input_info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large and has this info: \"%.*s\". Input info says \"%s\"", (uintptr_t) addr, (uintptr_t) addr-c->elem[i].addr, (uintptr_t) addr-c->elem[i].addr, (uintptr_t) c->elem[i].addr, (uintptr_t) c->elem[i].addr_after-c->elem[i].addr, (uintptr_t) c->elem[i].addr_after-c->elem[i].addr, (int) sizeof(c->elem[i].extra.info), c->elem[i].extra.info, cita_input_info);
 			#else
-			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large. Input info says \"%s\"", (size_t) addr, (size_t) addr-c->elem[i].addr, addr-c->elem[i].addr, (size_t) c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, (size_t) c->elem[i].addr_after-c->elem[i].addr, cita_input_info);
+			CITA_REPORT("cita_table_find_buffer(%#zx): pointer points to inside the buffer starting %zd (%#zx) bytes earlier at %#zx. Buffer is up to %zd (%#zx) bytes large. Input info says \"%s\"", (uintptr_t) addr, (uintptr_t) addr-c->elem[i].addr, addr-c->elem[i].addr, (uintptr_t) c->elem[i].addr, (uintptr_t) c->elem[i].addr_after-c->elem[i].addr, (uintptr_t) c->elem[i].addr_after-c->elem[i].addr, cita_input_info);
 			#endif
 			return NAI;
 		}
@@ -442,7 +442,7 @@ void cita_free_core(void *ptr, int allow_memset)
 	int32_t index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
-		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", (size_t) addr, cita_input_info);
+		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", (uintptr_t) addr, cita_input_info);
 		return;
 	}
 
@@ -585,7 +585,7 @@ void *cita_malloc(size_t size)
 		// Report failure to obtain enough 
 		if (el->addr_after > CITA_MEM_END)
 		{
-			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, (size_t) el->addr, (size_t) el->addr_after, el->addr_after/1048576., (size_t) CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, (uintptr_t) el->addr, (uintptr_t) el->addr_after, el->addr_after/1048576., (uintptr_t) CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
 			cita_free(CITA_PTR(el->addr));
 			return NULL;
 		}
@@ -622,7 +622,7 @@ void *cita_realloc(void *ptr, size_t size)
 	int32_t index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
-		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found. Input info says \"%s\"", (size_t) addr, size, cita_input_info);
+		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found. Input info says \"%s\"", (uintptr_t) addr, size, cita_input_info);
 		return NULL;
 	}
 

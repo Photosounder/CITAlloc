@@ -52,11 +52,11 @@
     #define CITA_INFO_LEN 56
 
     extern unsigned char __heap_base;
-    #define CITA_MEM_START ((size_t) &__heap_base)
+    #define CITA_MEM_START ((uintptr_t) &__heap_base)
     #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
     #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16);
     #define CITA_PTR(addr) ((void *) (addr))
-    #define CITA_ADDR(ptr) ((size_t) (ptr))
+    #define CITA_ADDR(ptr) ((uintptr_t) (ptr))
 
     char cita_report_cmd[256];
     #define CITA_PRINT(fmt, ...) { snprintf(cita_report_cmd, sizeof(cita_report_cmd), "Print "fmt, ##__VA_ARGS__); wahe_run_command(cita_report_cmd); }

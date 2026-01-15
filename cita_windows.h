@@ -3,12 +3,17 @@
 #define H_CITA_WIN
 
   #ifndef CITA_ADDR_TYPE
-    #define CITA_ADDR_TYPE size_t
+    #define CITA_ADDR_TYPE uintptr_t
   #endif
 
   #include "cit_alloc.h"
 
-  #define CITA_WIN_MAX ((size_t) 256 << 30)
+  #if UINTPTR_MAX == 0xFFFFFFFFUL
+    #define CITA_WIN_MAX UINTPTR_MAX
+  #else
+    #define CITA_WIN_MAX ((CITA_ADDR_TYPE) 1 << 40)
+  #endif
+
   typedef struct
   {
 	uint8_t *mem;
