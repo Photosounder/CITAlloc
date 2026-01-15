@@ -18,6 +18,7 @@
   {
 	uint8_t *mem;
 	CITA_ADDR_TYPE mem_end;
+	size_t mem_max;
   } cita_buffer_t;
 
   extern cita_buffer_t cita_buffer;
@@ -60,7 +61,7 @@
   #define CITA_INFO_LEN 56
 
   #define CITA_MEM_START ((CITA_ADDR_TYPE) cita_buffer.mem)
-  #define CITA_MEM_END ((CITA_ADDR_TYPE) cita_buffer.mem_end)
+  #define CITA_MEM_END cita_buffer.mem_end
   #define CITA_PTR(addr) ((void *) addr)
   #define CITA_ADDR(ptr) ((CITA_ADDR_TYPE) ptr)
 
@@ -71,13 +72,53 @@
     #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
   #endif
 
-extern void *VirtualAlloc(void *lpAddress, size_t dwSize, int flAllocationType, int flProtect);
-extern int GetLastError();
-
 #include <synchapi.h>
 CRITICAL_SECTION cita_mutex;
 #define CITA_LOCK { cita_win_init(); EnterCriticalSection(&cita_mutex); }
 #define CITA_UNLOCK LeaveCriticalSection(&cita_mutex);
+
+#ifndef _MEMORYAPI_H_
+  extern void *VirtualAlloc(void *lpAddress, size_t dwSize, int flAllocationType, int flProtect);
+  extern size_t VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
+#endif
+#ifndef _ERRHANDLING_H_
+  extern unsigned long GetLastError();
+#endif
+
+size_t windows_memory_max_usable_block()
+{
+	MEMORY_BASIC_INFORMATION mbi;
+
+	char *address = 0;
+	size_t max_usable_block = 0;
+
+	// Go through the ranges of the memory map
+	while (VirtualQuery(address, &mbi, sizeof(mbi)))
+	{
+		if (mbi.State == MEM_FREE)
+		{
+			uintptr_t start_addr = (uintptr_t) mbi.BaseAddress;
+			uintptr_t end_addr = start_addr + mbi.RegionSize;
+
+			// Align the start of the range to the next 64 kB boundary
+			uintptr_t aligned_start = (start_addr + 65535) & ~((uintptr_t) 65535);
+
+			// If there's still any free space left compare it the the max
+			if (aligned_start < end_addr)
+			{
+				size_t usable_size = end_addr - aligned_start;
+				if (usable_size > max_usable_block)
+					max_usable_block = usable_size;
+			}
+		}
+
+		// Set the start of the next range
+		address = (char *) mbi.BaseAddress + mbi.RegionSize;
+	}
+
+	CITA_PRINT("max_usable_block %zd GB\n", max_usable_block>>30);
+	return max_usable_block;
+}
 
 static void cita_win_init()
 {
@@ -88,42 +129,45 @@ static void cita_win_init()
 		InitializeCriticalSection(&cita_mutex);
 
 		// Reserve virtual memory
-		cita_buffer.mem = VirtualAlloc(NULL, CITA_WIN_MAX, 0x00002000 /*MEM_RESERVE*/, 0x01 /*PAGE_NOACCESS*/);
+		cita_buffer.mem_max = windows_memory_max_usable_block();
+		if (cita_buffer.mem_max > CITA_WIN_MAX)
+			cita_buffer.mem_max = CITA_WIN_MAX;
+		cita_buffer.mem = VirtualAlloc(NULL, cita_buffer.mem_max, 0x00002000 /*MEM_RESERVE*/, 0x01 /*PAGE_NOACCESS*/);
 
 		if (cita_buffer.mem == NULL)
 		{
-			CITA_REPORT("cita_mem_enlarge(): failed to reserve memory using VirtualAlloc() for %zd MB. Error: %d\n", CITA_WIN_MAX>>20, GetLastError());
+			CITA_REPORT("cita_mem_enlarge(): failed to reserve memory using VirtualAlloc() for %zd MB. Error: %lu\n", cita_buffer.mem_max>>20, GetLastError());
 			exit(EXIT_FAILURE);
 		}
 
-		cita_buffer.mem_end = (CITA_ADDR_TYPE) cita_buffer.mem;
+		CITA_MEM_END = CITA_MEM_START;
 	}
 }
 
-static void cita_mem_enlarge(size_t new_end)
+static void cita_mem_enlarge(uintptr_t new_end)
 {
 	// Round up the new end address	(12-bit)
 	new_end = (new_end + ((CITA_ADDR_TYPE) 1<<12)-1) & ~(((CITA_ADDR_TYPE) 1<<12)-1);
 
 	// Check size
-	if (new_end > (CITA_ADDR_TYPE) cita_buffer.mem + CITA_WIN_MAX)
+	if (new_end > CITA_MEM_START + cita_buffer.mem_max)
 	{
-		CITA_REPORT("cita_mem_enlarge(): cannot allocate %zd MB due to the limit being %zd MB.\n", (new_end-(CITA_ADDR_TYPE) cita_buffer.mem)>>20, CITA_WIN_MAX>>20);
+		CITA_REPORT("cita_mem_enlarge(): cannot allocate %zd MB due to the limit being %zd MB.\n", (new_end-CITA_MEM_START)>>20, cita_buffer.mem_max>>20);
 		exit(EXIT_FAILURE);
 	}
 
 	// Commit new memory
-	if (new_end > (CITA_ADDR_TYPE) cita_buffer.mem_end)
+	if (new_end > CITA_MEM_END)
 	{
-		void *ret = VirtualAlloc((void *) cita_buffer.mem_end, new_end - (CITA_ADDR_TYPE) cita_buffer.mem, 0x00001000 /*MEM_COMMIT*/, 0x04 /*PAGE_READWRITE*/);
+		void *ret = VirtualAlloc((void *) CITA_MEM_END, new_end-CITA_MEM_START, 0x00001000 /*MEM_COMMIT*/, 0x04 /*PAGE_READWRITE*/);
 
 		if (ret == NULL)
 		{
-			CITA_REPORT("cita_mem_enlarge(): failed to commit memory using VirtualAlloc() from %zd to %zd MB. Error: %d\n", (cita_buffer.mem_end-(CITA_ADDR_TYPE) cita_buffer.mem)>>20, (new_end-(CITA_ADDR_TYPE) cita_buffer.mem)>>20, GetLastError());
+			CITA_REPORT("cita_mem_enlarge(): failed to commit memory using VirtualAlloc() from %zd to %zd MB. Error: %lu\n", (CITA_MEM_END-CITA_MEM_START)>>20, (new_end-CITA_MEM_START)>>20, GetLastError());
 			exit(EXIT_FAILURE);
 		}
 
-		cita_buffer.mem_end = new_end;
+		CITA_MEM_END = new_end;
 	}
 }
 
