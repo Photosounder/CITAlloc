@@ -79,7 +79,7 @@ Unlike most arena allocators which are very basic bump allocators and can't `fre
 
 === cita_windows.h
 
-This implementation replaces the allocator when compiling to native Windows binaries. It works by reserving one large section of virtual memory (currently 256 GB) and progressively commiting more of it as needed, with this buffer being treated as the whole heap. A mutex is used so that allocations can be done in parallel.
+This implementation replaces the allocator when compiling to native Windows binaries. It works by reserving one large section of virtual memory (1 TB or the maximum available in 32-bit mode) and progressively commiting more of it as needed, with this buffer being treated as the whole heap. A mutex is used so that allocations can be done in parallel.
 
 A basic example:
 ```c
