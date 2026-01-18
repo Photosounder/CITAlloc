@@ -79,8 +79,8 @@ CRITICAL_SECTION cita_mutex;
 #define CITA_UNLOCK LeaveCriticalSection(&cita_mutex);
 
 #ifndef _MEMORYAPI_H_
-  extern void *VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
-  extern size_t VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
+  extern __declspec(dllimport) void *VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
+  extern __declspec(dllimport) size_t VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
 #endif
 #ifndef _ERRHANDLING_H_
   extern unsigned long GetLastError();
