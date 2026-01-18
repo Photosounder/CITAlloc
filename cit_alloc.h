@@ -65,6 +65,8 @@ CITA_MAP_SCALE: Enables the map and defines the power of 2 for the
 CITA_FREE_PATTERN: A byte pattern, e.g. 0xE6, that if set will be
   used to erase all unused bytes between CITA_MEM_START and
   CITA_MEM_END
+CITA_INIT_ELEM_AS: Changes the default initial allocation size of
+  the CITA table
 CITA_ALWAYS_CHECK_LINKS: All functions will check the integrity of
   the links between the table elements
 CITA_EXCLUDE_STRING_H: To avoid including <string.h>
@@ -108,10 +110,15 @@ CITA_TLS extern char *cita_input_info;
 // Not An Index
 #define NAI ((CITA_INDEX_TYPE) -1)
 
+#ifndef CITA_INIT_ELEM_AS
+  #define CITA_INIT_ELEM_AS 16
+#endif
+
 #ifdef CITA_MAP_SCALE
   #define CITA_MAP_COUNT_MIN ((CITA_MEM_END-CITA_MEM_START + (1<<CITA_MAP_SCALE)-1) >> CITA_MAP_SCALE)
 #endif
 
+#pragma pack(push, 1)
 typedef struct
 {
 	#ifndef CITA_EXCL_TIME
@@ -125,7 +132,6 @@ typedef struct
 	#endif
 } cita_extra_t;
 
-#pragma pack(push, 1)
 typedef struct
 {
 	CITA_INDEX_TYPE prev_index, next_index;
@@ -169,7 +175,7 @@ void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 
 #ifdef CITA_MAP_SCALE
 size_t cita_map_count = 0;
-int8_t cita_map_update_skip = 0;
+int8_t cita_map_update_skip = 1;
 
 void cita_map_update_range(CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_after)
 {
@@ -342,7 +348,7 @@ void cita_table_init()
 	// Alloc table
 	c->elem = CITA_PTR(cita_align_up(CITA_ADDR(c) + sizeof(cita_table_t)));
 	c->elem_count = 1;
-	c->elem_as = 16;	// can be changed
+	c->elem_as = CITA_INIT_ELEM_AS;
 
 	// Enlarge memory if needed
 	CITA_ADDR_TYPE table_end = CITA_ADDR(&c->elem[c->elem_as]);
@@ -379,6 +385,7 @@ void cita_table_init()
 	cita_input_info = orig_info;
 
 	// Initialise the current state of the map
+	cita_map_update_skip = 0;
 	cita_map_update_range(CITA_MEM_START, CITA_MEM_END);
 	#endif
 }
