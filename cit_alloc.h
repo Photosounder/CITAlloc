@@ -125,12 +125,14 @@ typedef struct
 	#endif
 } cita_extra_t;
 
+#pragma pack(push, 1)
 typedef struct
 {
 	CITA_INDEX_TYPE prev_index, next_index;
 	CITA_ADDR_TYPE addr, addr_after, after_space;
 	cita_extra_t extra;
 } cita_elem_t;
+#pragma pack(pop)
 
 typedef struct
 {
