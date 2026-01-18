@@ -33,6 +33,7 @@
   #define realloc(p,s) cita_win_realloc((p), (s), __FILE_NAME__, __func__, __LINE__)
   
   extern size_t cita_win_alloc_enough_pattern(void **buffer, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line);
+  #undef alloc_enough
   #define alloc_enough(b, nc, acp, se, ir)	*(acp) = cita_win_alloc_enough_pattern(b, nc, *(acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
 
   extern size_t cita_win_get_min_size();
@@ -78,7 +79,7 @@ CRITICAL_SECTION cita_mutex;
 #define CITA_UNLOCK LeaveCriticalSection(&cita_mutex);
 
 #ifndef _MEMORYAPI_H_
-  extern void *VirtualAlloc(void *lpAddress, size_t dwSize, int flAllocationType, int flProtect);
+  extern void *VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
   extern size_t VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
 #endif
 #ifndef _ERRHANDLING_H_
