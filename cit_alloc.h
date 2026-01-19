@@ -451,6 +451,7 @@ void cita_free_core(void *ptr, int allow_memset)
 	int32_t index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
+		index = cita_table_find_buffer(addr, 1);
 		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", (uintptr_t) addr, cita_input_info);
 		return;
 	}
@@ -652,7 +653,7 @@ void *cita_realloc(void *ptr, size_t size)
 	{
 		// If so update the end of the buffer as well as the size of the space after it
 		el->addr_after = cita_align_up(el->addr + size);
-		el->after_space = c->elem[el->next_index].addr - el->addr_after;
+		el->after_space = el->next_index ? c->elem[el->next_index].addr - el->addr_after : 0;
 
 		#ifdef CITA_MAP_SCALE
 		cita_map_update_range(el->addr, el->addr_after);
