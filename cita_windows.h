@@ -70,10 +70,13 @@
     #define CITA_PRINT(fmt, ...) { fprintf(stderr, fmt"\n", ##__VA_ARGS__); }
   #endif
   #ifndef CITA_REPORT
-    //#define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
+  #ifdef CITA_REPORT_TO_STDERR
+    #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
+  #else
     char cita_report_str[256];
     #include <winuser.h>
     #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt, ##__VA_ARGS__); MessageBoxA(NULL, cita_report_str, "CIT Alloc report", MB_OK | MB_ICONERROR); }
+  #endif
   #endif
 
 #include <synchapi.h>
