@@ -54,7 +54,7 @@
   cita_buffer_t cita_buffer = {0};
 
   #ifndef CITA_INDEX_TYPE
-    #define CITA_INDEX_TYPE uint16_t	// means there can only be 65535 allocations
+    #define CITA_INDEX_TYPE uint32_t	// means there can be 2^32-4 allocations
   #endif
   #define CITA_ALIGN 16			// all allocations will be aligned to 16 bytes
   #define CITA_MAP_SCALE 13		// means a map cell covers 8 kB
@@ -70,7 +70,10 @@
     #define CITA_PRINT(fmt, ...) { fprintf(stderr, fmt"\n", ##__VA_ARGS__); }
   #endif
   #ifndef CITA_REPORT
-    #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
+    //#define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
+    char cita_report_str[256];
+    #include <winuser.h>
+    #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt, ##__VA_ARGS__); MessageBoxA(NULL, cita_report_str, "CIT Alloc report", MB_OK | MB_ICONERROR); }
   #endif
 
 #include <synchapi.h>
@@ -86,7 +89,7 @@ CRITICAL_SECTION cita_mutex;
   extern unsigned long GetLastError();
 #endif
 
-size_t windows_memory_max_usable_block()
+size_t windows_memory_max_usable_block(uintptr_t *base_addr)
 {
 	MEMORY_BASIC_INFORMATION mbi;
 
@@ -109,7 +112,11 @@ size_t windows_memory_max_usable_block()
 			{
 				size_t usable_size = end_addr - aligned_start;
 				if (usable_size > max_usable_block)
+				{
 					max_usable_block = usable_size;
+					if (base_addr)
+						*base_addr = aligned_start;
+				}
 			}
 		}
 
@@ -129,10 +136,22 @@ static void cita_win_init()
 		InitializeCriticalSection(&cita_mutex);
 
 		// Reserve virtual memory
-		cita_buffer.mem_max = windows_memory_max_usable_block();
+		uintptr_t base_addr, round_addr;
+		cita_buffer.mem_max = windows_memory_max_usable_block(&base_addr);
+
+		// Round up the base address
+		round_addr = base_addr;
+		for (int i=1; i < 64; i<<=1)
+			round_addr |= round_addr >> i;
+		round_addr++;
+		cita_buffer.mem_max -= round_addr - base_addr;
+
+		// Limit the size
 		if (cita_buffer.mem_max > CITA_WIN_MAX)
 			cita_buffer.mem_max = CITA_WIN_MAX;
-		cita_buffer.mem = VirtualAlloc(NULL, cita_buffer.mem_max, 0x00002000 /*MEM_RESERVE*/, 0x01 /*PAGE_NOACCESS*/);
+
+		// Reserve the memory at the rounded address
+		cita_buffer.mem = VirtualAlloc((void *) round_addr, cita_buffer.mem_max, 0x00002000 /*MEM_RESERVE*/, 0x01 /*PAGE_NOACCESS*/);
 
 		if (cita_buffer.mem == NULL)
 		{

@@ -44,7 +44,7 @@
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
     #ifndef CITA_INDEX_TYPE
-      #define CITA_INDEX_TYPE uint16_t	// means there can only be 65535 allocations
+      #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
     #endif
     #define CITA_ALIGN 16		// all allocations will be aligned to 16 bytes
     #define CITA_MAP_SCALE 13		// means a map cell covers 8 kB
