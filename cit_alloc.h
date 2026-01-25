@@ -178,7 +178,7 @@ CITA_ADDR_TYPE cita_align_up(CITA_ADDR_TYPE addr)
 CITA_ADDR_TYPE cita_range_after_space(CITA_INDEX_TYPE index)
 {
 	cita_elem_t *el = &ct->elem[index];
-	return ct->elem[index].next_index ? ct->elem[el->next_index].addr - ct->elem[index].addr_end : 0;
+	return ct->elem[index].next_index ? ct->elem[el->next_index].addr - cita_align_up(ct->elem[index].addr_end) : 0;
 }
 
 void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
@@ -634,8 +634,8 @@ void *cita_malloc(size_t size)
 	}
 
 	// Write the element
-	el->addr = ct->elem[el->prev_index].addr_end;		// address of buffer
-	el->addr_end = cita_align_up(el->addr + size);	// address after this buffer
+	el->addr = cita_align_up(ct->elem[el->prev_index].addr_end);	// address of buffer
+	el->addr_end = el->addr + size;					// address after the end of this buffer
 	#ifndef CITA_EXCL_TIME
 	el->extra.time_created = el->extra.time_modified = ct->timestamp;
 	#endif
@@ -729,7 +729,7 @@ void *cita_realloc(void *ptr, size_t size)
 	if (space >= size)
 	{
 		CITA_ADDR_TYPE addr_after_old = el->addr_end;
-		el->addr_end = cita_align_up(el->addr + size);
+		el->addr_end = el->addr + size;
 	}
 	else
 	{
