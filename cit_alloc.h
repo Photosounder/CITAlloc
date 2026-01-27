@@ -72,7 +72,9 @@ CITA_ALWAYS_CHECK_LINKS: All functions will check the integrity of
   the links between the table elements
 CITA_EXCLUDE_STRING_H: To avoid including <string.h>
 CITA_EXCL_TIME: Exclude timestamps from the info table
-CITA_TLS: Storage-class specifier for globals
+CITA_TLS: Storage-class specifier for the input info pointer
+CITA_TLS_HEAP: Storage-class specifier for globals, used when
+  different threads have different heaps
 CITA_ADDR_TYPE: Address type defined as uint?_t
 CITA_MAPINDEX_TYPE: Map range index type, depends on the maximum
   expected cell count in the map
@@ -99,6 +101,10 @@ extern void *cita_realloc(void *ptr, size_t size);
 
 #ifndef CITA_TLS
   #define CITA_TLS
+#endif
+
+#ifndef CITA_TLS_HEAP
+  #define CITA_TLS_HEAP
 #endif
 
 extern int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only);
@@ -161,9 +167,9 @@ typedef struct
 	char cita_version[52];
 } cita_table_t;
 
-CITA_TLS cita_table_t *ct=NULL;
+CITA_TLS_HEAP cita_table_t *ct=NULL;
 CITA_TLS char *cita_input_info=NULL;
-CITA_TLS int cita_event_counter = 0;
+CITA_TLS_HEAP int cita_event_counter = 0;
 
 CITA_ADDR_TYPE cita_align_down(CITA_ADDR_TYPE addr)
 {

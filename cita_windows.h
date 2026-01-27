@@ -2,6 +2,10 @@
 #ifndef H_CITA_WIN
 #define H_CITA_WIN
 
+  #ifndef CITA_TLS
+    #define CITA_TLS _Thread_local
+  #endif
+
   #ifndef CITA_ADDR_TYPE
     #define CITA_ADDR_TYPE uintptr_t
   #endif

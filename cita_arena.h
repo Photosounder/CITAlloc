@@ -5,6 +5,9 @@
   #ifndef CITA_TLS
     #define CITA_TLS _Thread_local
   #endif
+  #ifndef CITA_TLS_HEAP
+    #define CITA_TLS_HEAP _Thread_local
+  #endif
 
   #ifndef CITA_ADDR_TYPE
     #define CITA_ADDR_TYPE uint32_t
