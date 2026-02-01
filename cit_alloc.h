@@ -78,6 +78,8 @@ CITA_TLS_HEAP: Storage-class specifier for globals, used when
 CITA_ADDR_TYPE: Address type defined as uint?_t
 CITA_MAPINDEX_TYPE: Map range index type, depends on the maximum
   expected cell count in the map
+CITA_PADDING: Padding size between buffers. Reveals buffer
+  overruns.
 
 */
 
@@ -125,6 +127,10 @@ CITA_TLS extern char *cita_input_info;
 
 #ifndef CITA_INIT_ELEM_AS
   #define CITA_INIT_ELEM_AS 16
+#endif
+
+#ifndef CITA_PADDING
+  #define CITA_PADDING 0
 #endif
 
 #undef CITA_MAP_SCALE
@@ -178,7 +184,7 @@ CITA_ADDR_TYPE cita_align_down(CITA_ADDR_TYPE addr)
 
 CITA_ADDR_TYPE cita_align_up(CITA_ADDR_TYPE addr)
 {
-	return cita_align_down(addr+CITA_ALIGN-1);
+	return cita_align_down(addr+CITA_ALIGN-1 + CITA_PADDING);
 }
 
 CITA_ADDR_TYPE cita_range_after_space(CITA_INDEX_TYPE index)
@@ -470,7 +476,7 @@ void cita_table_init()
 	cita_elem_t *el = &ct->elem[0];
 	el->prev_index = el->next_index = 0;
 	el->addr = CITA_ADDR(ct);
-	el->addr_end = CITA_ADDR(ct->elem);
+	el->addr_end = CITA_ADDR(ct) + sizeof(cita_table_t);
 	#ifdef CITA_MAP_SCALE
 	ct->elem[0].map_start = 0;
 	ct->elem[0].map_end = 0;
@@ -608,7 +614,7 @@ void *cita_malloc(size_t size)
 #if 0
 	// Traverse the table linearly to find the first free space large enough
 	for (int32_t i=0; i < ct->elem_count; i++)
-		if (cita_range_after_space(i) >= size)
+		if (cita_range_after_space(i) >= size + CITA_PADDING)
 		{
 			el->prev_index = i;
 			el->next_index = ct->elem[el->prev_index].next_index;
@@ -619,7 +625,7 @@ void *cita_malloc(size_t size)
 	CITA_INDEX_TYPE i = 0;
 	do
 	{
-		if (cita_range_after_space(i) >= size)
+		if (cita_range_after_space(i) >= size + CITA_PADDING)
 		{
 			el->prev_index = i;
 			el->next_index = ct->elem[el->prev_index].next_index;
@@ -732,7 +738,7 @@ void *cita_realloc(void *ptr, size_t size)
 	}
 
 	// If there's enough room, update the end of the buffer as well as the size of the space after it
-	if (space >= size)
+	if (space >= size + CITA_PADDING)
 	{
 		CITA_ADDR_TYPE addr_after_old = el->addr_end;
 		el->addr_end = el->addr + size;

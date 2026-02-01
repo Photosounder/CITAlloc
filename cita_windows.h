@@ -77,9 +77,10 @@
   #ifdef CITA_REPORT_TO_STDERR
     #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
   #else
-    char cita_report_str[256];
+    char cita_report_str[300];
     #include <winuser.h>
-    #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt, ##__VA_ARGS__); MessageBoxA(NULL, cita_report_str, "CIT Alloc report", MB_OK | MB_ICONERROR); }
+    extern WINBASEAPI VOID WINAPI DebugBreak(VOID);
+    #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt"\n\nDebug?", ##__VA_ARGS__); int r = MessageBoxA(NULL, cita_report_str, "CIT Alloc report", MB_YESNO | MB_TOPMOST | MB_ICONERROR); if (r == IDYES) DebugBreak(); }
   #endif
   #endif
 
