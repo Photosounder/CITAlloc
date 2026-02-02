@@ -80,6 +80,7 @@ CITA_MAPINDEX_TYPE: Map range index type, depends on the maximum
   expected cell count in the map
 CITA_PADDING: Padding size between buffers. Reveals buffer
   overruns.
+CITA_TIME_IS_COUNTER: Makes the timestamps be cita_event_counter
 
 */
 
@@ -175,7 +176,15 @@ typedef struct
 
 CITA_TLS_HEAP cita_table_t *ct=NULL;
 CITA_TLS char *cita_input_info=NULL;
-CITA_TLS_HEAP int cita_event_counter = 0;
+CITA_TLS_HEAP int cita_event_counter = -1;
+
+void cita_inc_event_counter()
+{
+	cita_event_counter++;
+	#ifdef CITA_TIME_IS_COUNTER
+	ct->timestamp = cita_event_counter;
+	#endif
+}
 
 CITA_ADDR_TYPE cita_align_down(CITA_ADDR_TYPE addr)
 {
@@ -460,6 +469,8 @@ void cita_table_init()
 	ct->cita_version[iv] = '\0';						/*iv += 1;*/
 	#endif
 
+	cita_inc_event_counter();
+
 	// Indicate that there's no available element
 	ct->available_index = NAI;
 
@@ -516,7 +527,7 @@ void cita_table_init()
 
 void cita_free_core(void *ptr, int allow_memset, int32_t index)
 {
-	cita_event_counter++;
+	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
 	CITA_ADDR_TYPE addr = CITA_ADDR(ptr);
 
@@ -574,7 +585,7 @@ int32_t cita_last_malloc_index = NAI;
 void *cita_malloc(size_t size)
 {
 	cita_table_init();
-	cita_event_counter++;
+	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
 
 	// Check valid size
@@ -704,7 +715,7 @@ void *cita_realloc(void *ptr, size_t size)
 	CITA_ADDR_TYPE addr = CITA_ADDR(ptr);
 
 	cita_table_init();
-	cita_event_counter++;
+	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
 
 	if (ptr == NULL)

@@ -18,6 +18,8 @@
     #define CITA_WIN_MAX ((CITA_ADDR_TYPE) 1 << 40)
   #endif
 
+  #define CITA_TIME_IS_COUNTER
+
   typedef struct
   {
 	uint8_t *mem;
