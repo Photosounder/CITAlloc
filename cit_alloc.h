@@ -601,12 +601,17 @@ void *cita_malloc(size_t size)
 	if (index == NAI)
 	{
 		// Enlarge the table
-		while (ct->elem_count+3 > ct->elem_as)
+		while (ct->elem_count+3 > ct->elem_as && ct->elem_as < NAI)
 		{
 			ct->elem_as *= 2;
+			if (ct->elem_as > NAI)
+				ct->elem_as = NAI;
 			ct->elem = cita_realloc(ct->elem, ct->elem_as * sizeof(cita_elem_t));
 		}
 		ct->elem_count++;
+		
+		if (ct->elem_count > NAI)
+			CITA_REPORT("cita_malloc(%zd). The number of elements in the table has reached the maximum. Use a larger index type. Input info says \"%s\"", size, cita_input_info);
 
 		// Last element is now available, initialise it as such
 		index = ct->elem_count - 1;
