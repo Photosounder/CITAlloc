@@ -755,10 +755,7 @@ void *cita_realloc(void *ptr, size_t size)
 
 	// If there's enough room, update the end of the buffer as well as the size of the space after it
 	if (space >= size + CITA_PADDING)
-	{
-		CITA_ADDR_TYPE addr_after_old = el->addr_end;
 		el->addr_end = el->addr + size;
-	}
 	else
 	{
 		cita_elem_t el_copy = *el;
