@@ -298,13 +298,77 @@ void cita_map_set_elem_range(CITA_INDEX_TYPE index)
 	}
 }
 
+int cita_map_index_is_live(CITA_INDEX_TYPE index)
+{
+	// Check whether a map cell still points to a linked element
+	return index == 0 || (index != NAI && index < ct->elem_count && ct->elem[index].next_index != NAI);
+}
+
+CITA_INDEX_TYPE cita_map_find_rebuild_start(CITA_INDEX_TYPE *map, size_t im0, size_t im1, CITA_ADDR_TYPE rebuild_start)
+{
+	CITA_INDEX_TYPE index = NAI;
+
+	// Try to anchor from a valid cell inside the rebuild range
+	for (size_t im = im0; im <= im1; im++)
+		if (cita_map_index_is_live(map[im]))
+		{
+			index = map[im];
+			break;
+		}
+
+	// Look backwards for the nearest valid map cell if this range is empty
+	for (size_t im = im0; index == NAI && im > 0; )
+	{
+		im--;
+		if (cita_map_index_is_live(map[im]))
+			index = map[im];
+	}
+
+	// Fall back to the start of the linked list
+	if (index == NAI)
+		index = 0;
+
+	// Move backwards to the first element that may overlap the first rebuilt cell
+	while (index && ct->elem[ct->elem[index].prev_index].addr_end > rebuild_start)
+		index = ct->elem[index].prev_index;
+
+	// Start from the first real allocation if the base marker was found
+	if (index == 0)
+		index = ct->elem[0].next_index;
+
+	// Move forwards past elements that end before the first rebuilt cell
+	while (index && ct->elem[index].addr_end <= rebuild_start)
+		index = ct->elem[index].next_index;
+
+	return index;
+}
+
+CITA_INDEX_TYPE cita_map_next_cell_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE cell_start)
+{
+	// Move forwards to the first element that may overlap the cell
+	while (index)
+	{
+		if (index == 1 || index == 2 || ct->elem[index].addr_end <= cell_start)
+		{
+			index = ct->elem[index].next_index;
+			continue;
+		}
+
+		break;
+	}
+
+	return index;
+}
+
 void cita_map_rebuild_range(size_t im0, size_t im1)
 {
 	if (cita_map_update_skip)
 		return;
 
+	// Ensure the map is large enough for the current heap
 	cita_map_ensure_capacity();
 
+	// Validate the requested cell range
 	if (im0 > im1 || cita_map_count == 0)
 		return;
 	if (im1 >= cita_map_count)
@@ -313,30 +377,34 @@ void cita_map_rebuild_range(size_t im0, size_t im1)
 		im1 = cita_map_count - 1;
 	}
 
+	// Find the first linked element that may overlap the rebuilt range
 	CITA_INDEX_TYPE *map = CITA_PTR(ct->elem[2].addr);
-	memset(&map[im0], 0xFF, (im1+1 - im0) * sizeof(CITA_INDEX_TYPE));
+	CITA_ADDR_TYPE rebuild_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im0 << CITA_MAP_SCALE);
+	CITA_INDEX_TYPE index = cita_map_find_rebuild_start(map, im0, im1, rebuild_start);
 
-	CITA_INDEX_TYPE index = 0;
-	do
+	// Rebuild each affected map cell from linked elements in address order
+	for (size_t im = im0; im <= im1; im++)
 	{
-		if (index != 1 && index != 2)	// avoid directly referencing the table and the map in the map
+		// Keep the base marker in the first map cell
+		if (im == 0)
 		{
-			size_t el_im0, el_im1;
-			cita_map_elem_cells(index, &el_im0, &el_im1);
-
-			if (el_im0 <= im1 && im0 <= el_im1)
-			{
-				size_t im_start = el_im0 > im0 ? el_im0 : im0;
-				size_t im_end = el_im1 < im1 ? el_im1 : im1;
-				for (size_t im = im_start; im <= im_end; im++)
-					if (map[im] == NAI)
-						map[im] = index;
-			}
+			map[im] = 0;
+			continue;
 		}
 
-		index = ct->elem[index].next_index;
+		// Compute this cell's address range
+		CITA_ADDR_TYPE cell_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im << CITA_MAP_SCALE);
+		CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
+		if (cell_end < cell_start)
+			cell_end = (CITA_ADDR_TYPE) -1;
+
+		// Store the first linked element that overlaps this cell
+		index = cita_map_next_cell_index(index, cell_start);
+		if (index && ct->elem[index].addr < cell_end)
+			map[im] = index;
+		else
+			map[im] = NAI;
 	}
-	while (index);
 }
 
 void cita_map_update_range(CITA_INDEX_TYPE index)

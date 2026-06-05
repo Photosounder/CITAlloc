@@ -31,21 +31,30 @@ static int test_validate_map(const char *label)
 	for (size_t i=0; i < needed; i++)
 	{
 		CITA_INDEX_TYPE index = map[i];
-		if (index != NAI && (index >= ct->elem_count || ct->elem[index].next_index == NAI))
-		{
-			fprintf(stderr, "%s: map[%zu] contains invalid index %u\n", label, i, (unsigned) index);
-			return 1;
-		}
+		CITA_ADDR_TYPE cell_start = CITA_MEM_START + (CITA_ADDR_TYPE) i * CITA_MAP_CELL_SIZE;
+		CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
+		if (cell_end < cell_start)
+			cell_end = (CITA_ADDR_TYPE) -1;
 
-		if (index != NAI)
+		// Find the first linked element that should be mapped to this cell
+		CITA_INDEX_TYPE expected = NAI;
+		CITA_INDEX_TYPE ii = 0;
+		do
 		{
-			CITA_ADDR_TYPE cell_start = CITA_MEM_START + (CITA_ADDR_TYPE) i * CITA_MAP_CELL_SIZE;
-			CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
-			if (!(ct->elem[index].addr < cell_end && cell_start < ct->elem[index].addr_end))
+			if (ii != 1 && ii != 2 && ct->elem[ii].addr < cell_end && cell_start < ct->elem[ii].addr_end)
 			{
-				fprintf(stderr, "%s: map[%zu] contains non-overlapping index %u\n", label, i, (unsigned) index);
-				return 1;
+				expected = ii;
+				break;
 			}
+			ii = ct->elem[ii].next_index;
+		}
+		while (ii);
+
+		// Check that the map contains exactly that element
+		if (index != expected)
+		{
+			fprintf(stderr, "%s: map[%zu] contains index %u, expected %u\n", label, i, (unsigned) index, (unsigned) expected);
+			return 1;
 		}
 	}
 
