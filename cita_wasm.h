@@ -5,10 +5,10 @@
 
   // Needed to stop the linker from adding the default implementation
   #include <stddef.h>	// for NULL
-  void *malloc(size_t size) { return NULL; }
-  void free(void *ptr) {}
-  void *calloc(size_t nmemb, size_t size) { return NULL; }
-  void *realloc(void *ptr, size_t size)  { return NULL; }
+  void *malloc(size_t size) { (void) size; return NULL; }
+  void free(void *ptr) { (void) ptr; }
+  void *calloc(size_t nmemb, size_t size) { (void) nmemb; (void) size; return NULL; }
+  void *realloc(void *ptr, size_t size)  { (void) ptr; (void) size; return NULL; }
 
 #else // CITA_WASM_IMPLEMENTATION_PART1
 
@@ -53,8 +53,8 @@
 
     extern unsigned char __heap_base;
     #define CITA_MEM_START ((uintptr_t) &__heap_base)
-    #define CITA_MEM_END (__builtin_wasm_memory_size(0) * 65536)
-    #define CITA_MEM_ENLARGE(new_end) __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+65535)>>16);
+    #define CITA_MEM_END ((CITA_ADDR_TYPE) __builtin_wasm_memory_size(0) << 16)
+    #define CITA_MEM_ENLARGE(new_end) { __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+(((CITA_ADDR_TYPE) 1<<16)-1))>>16); }
     #define CITA_PTR(addr) ((void *) (addr))
     #define CITA_ADDR(ptr) ((uintptr_t) (ptr))
 
@@ -115,7 +115,7 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 
 	if (needed_count > alloc_count)
 	{
-		newsize = ceil((double) needed_count * inc_ratio);
+		newsize = (double) needed_count * inc_ratio + 0.9999999999999999;
 
 		// Try realloc to the new larger size
 		int clear_info = (cita_input_info == NULL);

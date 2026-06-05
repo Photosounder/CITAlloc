@@ -776,7 +776,7 @@ void *cita_malloc(size_t size)
 		// Report failure to obtain enough 
 		if (el->addr_end > CITA_MEM_END)
 		{
-			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, (uintptr_t) el->addr, (uintptr_t) el->addr_end, el->addr_end/1048576., (uintptr_t) CITA_MEM_END, CITA_MEM_END/1048576., cita_input_info);
+			CITA_REPORT("cita_malloc(%zd): new buffer would start at %#zx and end at %#zx (%.1f MB) but the memory can only be enlarged to %#zx (%.1f MB). Input info says \"%s\"", size, (uintptr_t) el->addr, (uintptr_t) el->addr_end, el->addr_end/1048576., (uintptr_t) CITA_MEM_END, (CITA_MEM_END-CITA_MEM_START)/1048576., cita_input_info);
 			cita_free(CITA_PTR(el->addr));
 			return NULL;
 		}
