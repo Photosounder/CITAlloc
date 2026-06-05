@@ -244,6 +244,15 @@ CITA_MAPSIZE_TYPE cita_map_space_value(CITA_ADDR_TYPE size)
 	return (CITA_MAPSIZE_TYPE) value;
 }
 
+void cita_map_cell_range(size_t im, CITA_ADDR_TYPE *cell_start, CITA_ADDR_TYPE *cell_end)
+{
+	// Compute the address range covered by a map cell
+	*cell_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im << CITA_MAP_SCALE);
+	*cell_end = *cell_start + CITA_MAP_CELL_SIZE;
+	if (*cell_end < *cell_start)
+		*cell_end = (CITA_ADDR_TYPE) -1;
+}
+
 void cita_map_init_cells(cita_map_cell_t *map, size_t im0, size_t im1)
 {
 	// Initialise map cells to empty allocation and free-space entries
@@ -333,6 +342,16 @@ void cita_map_include_free_space_after(size_t *im0, size_t *im1, CITA_INDEX_TYPE
 		cita_map_include_addr_range(im0, im1, addr, addr_end);
 }
 
+void cita_map_include_moved_elem(size_t *im0, size_t *im1, CITA_INDEX_TYPE index, CITA_INDEX_TYPE old_prev_index, CITA_ADDR_TYPE old_addr, CITA_ADDR_TYPE old_addr_end)
+{
+	// Add an element's old and current positions after skipped map updates
+	cita_map_include_addr_range(im0, im1, old_addr, old_addr_end);
+	cita_map_include_free_space_after(im0, im1, old_prev_index);
+	cita_map_include_elem(im0, im1, index);
+	cita_map_include_free_space_after(im0, im1, ct->elem[index].prev_index);
+	cita_map_include_free_space_after(im0, im1, index);
+}
+
 void cita_map_ensure_capacity()
 {
 	if (!cita_map_ready || cita_map_resizing)
@@ -369,6 +388,9 @@ void cita_map_ensure_capacity()
 		CITA_INDEX_TYPE old_map_prev_index = ct->elem[2].prev_index;
 		CITA_ADDR_TYPE old_map_addr = ct->elem[2].addr;
 		CITA_ADDR_TYPE old_map_addr_end = ct->elem[2].addr_end;
+		CITA_INDEX_TYPE old_table_prev_index = ct->elem[1].prev_index;
+		CITA_ADDR_TYPE old_table_addr = ct->elem[1].addr;
+		CITA_ADDR_TYPE old_table_addr_end = ct->elem[1].addr_end;
 
 		int update_skip = cita_map_update_skip;
 		cita_map_update_skip = 1;
@@ -391,11 +413,9 @@ void cita_map_ensure_capacity()
 		if (!cita_map_update_skip)
 		{
 			size_t im0 = 1, im1 = 0;
-			cita_map_include_addr_range(&im0, &im1, old_map_addr, old_map_addr_end);
-			cita_map_include_free_space_after(&im0, &im1, old_map_prev_index);
-			cita_map_include_elem(&im0, &im1, 2);
-			cita_map_include_free_space_after(&im0, &im1, ct->elem[2].prev_index);
-			cita_map_include_free_space_after(&im0, &im1, 2);
+			if (old_table_prev_index != ct->elem[1].prev_index || old_table_addr != ct->elem[1].addr || old_table_addr_end != ct->elem[1].addr_end)
+				cita_map_include_moved_elem(&im0, &im1, 1, old_table_prev_index, old_table_addr, old_table_addr_end);
+			cita_map_include_moved_elem(&im0, &im1, 2, old_map_prev_index, old_map_addr, old_map_addr_end);
 			cita_map_rebuild_range(im0, im1);
 		}
 	}
@@ -510,36 +530,46 @@ CITA_INDEX_TYPE cita_map_next_gap_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE ce
 	return index;
 }
 
-CITA_MAPSIZE_TYPE cita_map_cell_free_space(CITA_INDEX_TYPE gap_index, CITA_ADDR_TYPE cell_start, CITA_ADDR_TYPE cell_end)
+void cita_map_store_free_space(cita_map_cell_t *map, size_t im0, size_t im1, CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_end)
 {
-	// Find the biggest reusable free space that overlaps this cell
-	CITA_MAPSIZE_TYPE free_space = 0;
+	// Find the rebuilt cells overlapped by this reusable free space
+	size_t gap_im0, gap_im1;
+	cita_map_addr_cells(addr, addr_end, &gap_im0, &gap_im1);
+	if (gap_im0 < im0)
+		gap_im0 = im0;
+	if (gap_im1 > im1)
+		gap_im1 = im1;
+	if (gap_im0 > gap_im1)
+		return;
+
+	// Store the free-space size in every overlapped rebuilt cell
+	CITA_MAPSIZE_TYPE value = cita_map_space_value(addr_end - addr);
+	for (size_t im = gap_im0; im <= gap_im1; im++)
+		if (value > map[im].free_space)
+			map[im].free_space = value;
+}
+
+void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, CITA_INDEX_TYPE gap_index, CITA_ADDR_TYPE rebuild_start, CITA_ADDR_TYPE rebuild_end)
+{
+	// Walk each linked gap once to rebuild free-space values
 	while (gap_index != NAI)
 	{
-		CITA_ADDR_TYPE addr, addr_end;
-		if (!cita_map_free_space_after(gap_index, &addr, &addr_end))
+		cita_elem_t *el = &ct->elem[gap_index];
+		if (el->next_index == 0)
+			break;
+
+		CITA_ADDR_TYPE addr = cita_align_up(el->addr_end);
+		CITA_ADDR_TYPE addr_end = ct->elem[el->next_index].addr;
+		if (addr < addr_end)
 		{
-			if (ct->elem[gap_index].next_index == 0)
+			if (addr >= rebuild_end)
 				break;
-			gap_index = ct->elem[gap_index].next_index;
-			continue;
-		}
-		if (addr >= cell_end)
-			break;
-
-		if (cell_start < addr_end)
-		{
-			CITA_MAPSIZE_TYPE value = cita_map_space_value(addr_end - addr);
-			if (value > free_space)
-				free_space = value;
+			if (addr_end > rebuild_start)
+				cita_map_store_free_space(map, im0, im1, addr, addr_end);
 		}
 
-		if (ct->elem[gap_index].next_index == 0)
-			break;
-		gap_index = ct->elem[gap_index].next_index;
+		gap_index = el->next_index;
 	}
-
-	return free_space;
 }
 
 CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
@@ -557,10 +587,8 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 	for (size_t im = 0; im < cita_map_count; im++)
 		if (map[im].free_space >= required_value)
 		{
-			CITA_ADDR_TYPE cell_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im << CITA_MAP_SCALE);
-			CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
-			if (cell_end < cell_start)
-				cell_end = (CITA_ADDR_TYPE) -1;
+			CITA_ADDR_TYPE cell_start, cell_end;
+			cita_map_cell_range(im, &cell_start, &cell_end);
 
 			// Check the linked free spaces around the promising cell
 			CITA_INDEX_TYPE index = cita_map_find_rebuild_start(map, im, im, cell_start);
@@ -607,10 +635,19 @@ void cita_map_rebuild_range(size_t im0, size_t im1)
 	CITA_ADDR_TYPE rebuild_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im0 << CITA_MAP_SCALE);
 	CITA_INDEX_TYPE index = cita_map_find_rebuild_start(map, im0, im1, rebuild_start);
 	CITA_INDEX_TYPE gap_index = cita_map_find_gap_start(index);
+	CITA_ADDR_TYPE rebuild_last_start, rebuild_end;
+	cita_map_cell_range(im1, &rebuild_last_start, &rebuild_end);
 
 	// Rebuild each affected map cell from linked elements in address order
 	for (size_t im = im0; im <= im1; im++)
 	{
+		// Compute this cell's address range
+		CITA_ADDR_TYPE cell_start, cell_end;
+		cita_map_cell_range(im, &cell_start, &cell_end);
+
+		// Clear the free-space entry before repainting linked gaps
+		map[im].free_space = 0;
+
 		// Keep the base marker in the first map cell
 		if (im == 0)
 		{
@@ -619,28 +656,16 @@ void cita_map_rebuild_range(size_t im0, size_t im1)
 		else
 		{
 			// Store the first linked element that overlaps this cell
-			CITA_ADDR_TYPE cell_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im << CITA_MAP_SCALE);
-			CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
-			if (cell_end < cell_start)
-				cell_end = (CITA_ADDR_TYPE) -1;
-
 			index = cita_map_next_cell_index(index, cell_start);
 			if (index && ct->elem[index].addr < cell_end)
 				map[im].index = index;
 			else
 				map[im].index = NAI;
 		}
-
-		// Compute this cell's address range
-		CITA_ADDR_TYPE cell_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im << CITA_MAP_SCALE);
-		CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
-		if (cell_end < cell_start)
-			cell_end = (CITA_ADDR_TYPE) -1;
-
-		// Store the biggest reusable free space that overlaps this cell
-		gap_index = cita_map_next_gap_index(gap_index, cell_start);
-		map[im].free_space = cita_map_cell_free_space(gap_index, cell_start, cell_end);
 	}
+
+	// Store the biggest reusable free space that overlaps each rebuilt cell
+	cita_map_rebuild_free_spaces(map, im0, im1, gap_index, rebuild_start, rebuild_end);
 }
 
 void cita_map_update_range(CITA_INDEX_TYPE index)
@@ -1213,6 +1238,9 @@ void *cita_realloc(void *ptr, size_t size)
 		cita_map_include_elem(&old_map_im0, &old_map_im1, index);
 		cita_map_include_free_space_after(&old_map_im0, &old_map_im1, el->prev_index);
 		cita_map_include_free_space_after(&old_map_im0, &old_map_im1, index);
+		CITA_INDEX_TYPE old_table_prev_index = ct->elem[1].prev_index;
+		CITA_ADDR_TYPE old_table_addr = ct->elem[1].addr;
+		CITA_ADDR_TYPE old_table_addr_end = ct->elem[1].addr_end;
 		#endif
 
 		// Allocate new element to find a suitable address and trigger any map enlargement then free it
@@ -1277,6 +1305,8 @@ void *cita_realloc(void *ptr, size_t size)
 		cita_map_include_elem(&old_map_im0, &old_map_im1, index);
 		cita_map_include_free_space_after(&old_map_im0, &old_map_im1, el->prev_index);
 		cita_map_include_free_space_after(&old_map_im0, &old_map_im1, index);
+		if (old_table_prev_index != ct->elem[1].prev_index || old_table_addr != ct->elem[1].addr || old_table_addr_end != ct->elem[1].addr_end)
+			cita_map_include_moved_elem(&old_map_im0, &old_map_im1, 1, old_table_prev_index, old_table_addr, old_table_addr_end);
 		cita_map_rebuild_range(old_map_im0, old_map_im1);
 		el = &ct->elem[index];
 		#endif
