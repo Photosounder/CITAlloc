@@ -20,7 +20,7 @@ static size_t test_map_needed_count(void)
 static int test_validate_map(const char *label)
 {
 	size_t needed = test_map_needed_count();
-	CITA_INDEX_TYPE *map = CITA_PTR(ct->elem[2].addr);
+	cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 
 	if (cita_map_count < needed)
 	{
@@ -30,7 +30,7 @@ static int test_validate_map(const char *label)
 
 	for (size_t i=0; i < needed; i++)
 	{
-		CITA_INDEX_TYPE index = map[i];
+		CITA_INDEX_TYPE index = map[i].index;
 		CITA_ADDR_TYPE cell_start = CITA_MEM_START + (CITA_ADDR_TYPE) i * CITA_MAP_CELL_SIZE;
 		CITA_ADDR_TYPE cell_end = cell_start + CITA_MAP_CELL_SIZE;
 		if (cell_end < cell_start)
@@ -54,6 +54,29 @@ static int test_validate_map(const char *label)
 		if (index != expected)
 		{
 			fprintf(stderr, "%s: map[%zu] contains index %u, expected %u\n", label, i, (unsigned) index, (unsigned) expected);
+			return 1;
+		}
+
+		// Find the biggest free space that should be mapped to this cell
+		CITA_MAPSIZE_TYPE expected_space = 0;
+		ii = 0;
+		do
+		{
+			CITA_ADDR_TYPE addr, addr_end;
+			if (cita_map_free_space_after(ii, &addr, &addr_end) && addr < cell_end && cell_start < addr_end)
+			{
+				CITA_MAPSIZE_TYPE space = cita_map_space_value(addr_end - addr);
+				if (space > expected_space)
+					expected_space = space;
+			}
+			ii = ct->elem[ii].next_index;
+		}
+		while (ii);
+
+		// Check that the map contains exactly that free-space value
+		if (map[i].free_space != expected_space)
+		{
+			fprintf(stderr, "%s: map[%zu] contains free space %u, expected %u\n", label, i, (unsigned) map[i].free_space, (unsigned) expected_space);
 			return 1;
 		}
 	}
