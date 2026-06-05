@@ -81,6 +81,8 @@ CITA_MAPINDEX_TYPE: Map range index type, depends on the maximum
 CITA_MAPSIZE_TYPE: Map free-space size type. Defaults to
   CITA_MAPINDEX_TYPE
 CITA_GAP_LINKS: Add free-space run boundary links to each entry
+CITA_GAP_LINK_SCALE: Power of 2 for fake gap-link boundaries.
+  Defaults to CITA_MAP_SCALE when the map is enabled, otherwise 16.
 CITA_PADDING: Padding size between buffers. Reveals buffer
   overruns.
 CITA_TIME_IS_COUNTER: Makes the timestamps be cita_event_counter
@@ -246,6 +248,14 @@ void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 }
 
 #ifdef CITA_GAP_LINKS
+#ifndef CITA_GAP_LINK_SCALE
+  #ifdef CITA_MAP_SCALE
+    #define CITA_GAP_LINK_SCALE CITA_MAP_SCALE
+  #else
+    #define CITA_GAP_LINK_SCALE 16
+  #endif
+#endif
+
 void cita_gap_init_elem(CITA_INDEX_TYPE index)
 {
 	// Clear gap-owner hints for an unavailable element
@@ -260,13 +270,35 @@ int cita_gap_owns_space(CITA_INDEX_TYPE index)
 	return cita_free_space_after(index, &addr, &addr_end);
 }
 
+int cita_gap_is_boundary(CITA_INDEX_TYPE index)
+{
+	// Check whether an element owns a real or fake gap boundary
+	if (index == NAI || index >= ct->elem_count)
+		return 0;
+
+	cita_elem_t *el = &ct->elem[index];
+	if (el->next_index == 0 || el->next_index == NAI)
+		return 0;
+
+	// Treat actual free spaces as gap boundaries
+	CITA_ADDR_TYPE addr = cita_align_up(el->addr_end);
+	CITA_ADDR_TYPE addr_end = ct->elem[el->next_index].addr;
+	if (addr < addr_end)
+		return 1;
+
+	// Treat packed links that cross fake-gap cells as zero-byte boundaries
+	CITA_ADDR_TYPE cell0 = (el->addr - CITA_MEM_START) >> CITA_GAP_LINK_SCALE;
+	CITA_ADDR_TYPE cell1 = (addr_end - CITA_MEM_START) >> CITA_GAP_LINK_SCALE;
+	return cell0 != cell1;
+}
+
 CITA_INDEX_TYPE cita_gap_span_start(CITA_INDEX_TYPE index)
 {
-	// Find the first entry after the previous reusable free space
+	// Find the first entry after the previous real or fake gap boundary
 	while (index != 0)
 	{
 		CITA_INDEX_TYPE prev_index = ct->elem[index].prev_index;
-		if (cita_gap_owns_space(prev_index))
+		if (cita_gap_is_boundary(prev_index))
 			break;
 		index = prev_index;
 	}
@@ -276,8 +308,8 @@ CITA_INDEX_TYPE cita_gap_span_start(CITA_INDEX_TYPE index)
 
 CITA_INDEX_TYPE cita_gap_span_end(CITA_INDEX_TYPE index)
 {
-	// Find the last entry before the next reusable free space
-	while (!cita_gap_owns_space(index) && ct->elem[index].next_index != 0)
+	// Find the last entry before the next real or fake gap boundary
+	while (!cita_gap_is_boundary(index) && ct->elem[index].next_index != 0)
 	{
 		index = ct->elem[index].next_index;
 	}
@@ -312,8 +344,8 @@ void cita_gap_refresh(CITA_INDEX_TYPE index)
 	// Rebuild the run containing this element
 	cita_gap_rebuild_span(cita_gap_span_start(index), cita_gap_span_end(index));
 
-	// Rebuild the run after this element when it now owns a gap
-	if (cita_gap_owns_space(index) && ct->elem[index].next_index != 0)
+	// Rebuild the run after this element when it now owns a real or fake gap boundary
+	if (cita_gap_is_boundary(index) && ct->elem[index].next_index != 0)
 	{
 		CITA_INDEX_TYPE next_index = ct->elem[index].next_index;
 		cita_gap_rebuild_span(next_index, cita_gap_span_end(next_index));
@@ -322,7 +354,7 @@ void cita_gap_refresh(CITA_INDEX_TYPE index)
 
 CITA_INDEX_TYPE cita_gap_first_at_or_after(CITA_INDEX_TYPE index)
 {
-	// Read the entry before the next reusable free space
+	// Read the entry before the next real or fake gap boundary
 	if (index == NAI || index >= ct->elem_count || ct->elem[index].next_index == NAI)
 		return NAI;
 
@@ -331,7 +363,7 @@ CITA_INDEX_TYPE cita_gap_first_at_or_after(CITA_INDEX_TYPE index)
 
 CITA_INDEX_TYPE cita_gap_next_linked(CITA_INDEX_TYPE index)
 {
-	// Find the next entry before a reusable free space
+	// Find the next entry before a real or fake gap boundary
 	if (index == NAI || index >= ct->elem_count || ct->elem[index].next_index == 0)
 		return NAI;
 
@@ -340,7 +372,7 @@ CITA_INDEX_TYPE cita_gap_next_linked(CITA_INDEX_TYPE index)
 
 CITA_INDEX_TYPE cita_gap_find_free_space(CITA_ADDR_TYPE required_space)
 {
-	// Search gap owners for a reusable free space large enough
+	// Search gap boundaries for a reusable free space large enough
 	for (CITA_INDEX_TYPE index = ct->elem[0].next_gap_index; index != NAI; index = cita_gap_next_linked(index))
 		if (cita_range_after_space(index) >= required_space)
 			return index;
@@ -693,10 +725,18 @@ void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, 
 		CITA_ADDR_TYPE addr_end = ct->elem[el->next_index].addr;
 		if (addr < addr_end)
 		{
+			// Stop once real free spaces are past the rebuilt range
 			if (addr >= rebuild_end)
 				break;
 			if (addr_end > rebuild_start)
 				cita_map_store_free_space(map, im0, im1, addr, addr_end);
+			if (addr_end >= rebuild_end)
+				break;
+		}
+		else if (addr_end >= rebuild_end)
+		{
+			// Stop once fake boundaries are past the rebuilt range
+			break;
 		}
 
 		#ifdef CITA_GAP_LINKS
