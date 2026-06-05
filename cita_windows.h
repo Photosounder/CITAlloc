@@ -273,13 +273,13 @@ size_t cita_win_alloc_enough_pattern(void **buffer, size_t needed_count, size_t 
 {
 	size_t newsize;
 	void *p;
-	CITA_LOCK
 
 	if (needed_count > alloc_count)
 	{
 		extern double ceil(double x);
 		newsize = ceil((double) needed_count * inc_ratio);
 
+		CITA_LOCK
 		// Try realloc to the new larger size
 		int clear_info = (cita_input_info == NULL);
 		ADD_CITA_INFO
@@ -294,6 +294,7 @@ size_t cita_win_alloc_enough_pattern(void **buffer, size_t needed_count, size_t 
 		}
 		else
 			*buffer = p;
+		CITA_UNLOCK
 
 		// Set the new bytes
 		memset(&((uint8_t *)(*buffer))[alloc_count * size_elem], pattern, (newsize-alloc_count) * size_elem);
@@ -301,7 +302,6 @@ size_t cita_win_alloc_enough_pattern(void **buffer, size_t needed_count, size_t 
 		alloc_count = newsize;
 	}
 
-	CITA_UNLOCK
 	return alloc_count;
 }
 
