@@ -85,8 +85,12 @@
     #else
       #define CITA_WINAPI __stdcall
     #endif
-    extern __declspec(dllimport) int CITA_WINAPI MessageBoxA(void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType);
-    extern __declspec(dllimport) void CITA_WINAPI DebugBreak(void);
+    #if !defined(_WINDOWS_) && !defined(_WINUSER_)
+      extern __declspec(dllimport) int CITA_WINAPI MessageBoxA(void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType);
+    #endif
+    #if !defined(_WINDOWS_) && !defined(_APISETDEBUG_) && !defined(_DEBUGAPI_H_)
+      extern __declspec(dllimport) void CITA_WINAPI DebugBreak(void);
+    #endif
     #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt"\n\nDebug?", ##__VA_ARGS__); int r = MessageBoxA(NULL, cita_report_str, "CIT Alloc report", 0x00000004u /*MB_YESNO*/ | 0x00040000u /*MB_TOPMOST*/ | 0x00000010u /*MB_ICONERROR*/); if (r == 6 /*IDYES*/) DebugBreak(); }
   #endif
   #endif
