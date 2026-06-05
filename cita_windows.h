@@ -65,7 +65,8 @@
   #define CITA_ALIGN 16			// all allocations will be aligned to 16 bytes
   #define CITA_MAP_SCALE 16		// means a map cell covers 64 kB
   #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat
-  #define CITA_INFO_LEN 56
+  #define CITA_INFO_LEN 48
+  #define CITA_GAP_LINKS
 
   #define CITA_MEM_START ((CITA_ADDR_TYPE) cita_buffer.mem)
   #define CITA_MEM_END cita_buffer.mem_end

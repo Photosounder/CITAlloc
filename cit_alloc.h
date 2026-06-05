@@ -80,6 +80,7 @@ CITA_MAPINDEX_TYPE: Map range index type, depends on the maximum
   expected cell count in the map
 CITA_MAPSIZE_TYPE: Map free-space size type. Defaults to
   CITA_MAPINDEX_TYPE
+CITA_GAP_LINKS: Add free-space run boundary links to each entry
 CITA_PADDING: Padding size between buffers. Reveals buffer
   overruns.
 CITA_TIME_IS_COUNTER: Makes the timestamps be cita_event_counter
@@ -164,6 +165,9 @@ typedef struct
 typedef struct
 {
 	CITA_INDEX_TYPE prev_index, next_index;
+	#ifdef CITA_GAP_LINKS
+	CITA_INDEX_TYPE prev_gap_index, next_gap_index;
+	#endif
 	CITA_ADDR_TYPE addr, addr_end;
 	#ifdef CITA_MAP_SCALE
 	CITA_MAPINDEX_TYPE map_start, map_end;
@@ -193,7 +197,6 @@ typedef struct
 CITA_TLS_HEAP cita_table_t *ct=NULL;
 CITA_TLS char *cita_input_info=NULL;
 CITA_TLS_HEAP int cita_event_counter = -1;
-
 void cita_inc_event_counter()
 {
 	cita_event_counter++;
@@ -212,10 +215,26 @@ CITA_ADDR_TYPE cita_align_up(CITA_ADDR_TYPE addr)
 	return cita_align_down(addr+CITA_ALIGN-1 + CITA_PADDING);
 }
 
+int cita_free_space_after(CITA_INDEX_TYPE index, CITA_ADDR_TYPE *addr, CITA_ADDR_TYPE *addr_end)
+{
+	// Find the reusable free space after an element
+	if (index == NAI || index >= ct->elem_count)
+		return 0;
+
+	cita_elem_t *el = &ct->elem[index];
+	if (el->next_index == 0 || el->next_index == NAI)
+		return 0;
+
+	*addr = cita_align_up(el->addr_end);
+	*addr_end = ct->elem[el->next_index].addr;
+	return *addr < *addr_end;
+}
+
 CITA_ADDR_TYPE cita_range_after_space(CITA_INDEX_TYPE index)
 {
-	cita_elem_t *el = &ct->elem[index];
-	return ct->elem[index].next_index ? ct->elem[el->next_index].addr - cita_align_up(ct->elem[index].addr_end) : 0;
+	// Return the reusable free space after an element
+	CITA_ADDR_TYPE addr, addr_end;
+	return cita_free_space_after(index, &addr, &addr_end) ? addr_end - addr : 0;
 }
 
 void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
@@ -225,6 +244,110 @@ void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 		memset(CITA_PTR(start), CITA_FREE_PATTERN, CITA_MEM_END - start);
 	#endif
 }
+
+#ifdef CITA_GAP_LINKS
+void cita_gap_init_elem(CITA_INDEX_TYPE index)
+{
+	// Clear gap-owner hints for an unavailable element
+	ct->elem[index].prev_gap_index = NAI;
+	ct->elem[index].next_gap_index = NAI;
+}
+
+int cita_gap_owns_space(CITA_INDEX_TYPE index)
+{
+	// Check whether an element owns a reusable free space
+	CITA_ADDR_TYPE addr, addr_end;
+	return cita_free_space_after(index, &addr, &addr_end);
+}
+
+CITA_INDEX_TYPE cita_gap_span_start(CITA_INDEX_TYPE index)
+{
+	// Find the first entry after the previous reusable free space
+	while (index != 0)
+	{
+		CITA_INDEX_TYPE prev_index = ct->elem[index].prev_index;
+		if (cita_gap_owns_space(prev_index))
+			break;
+		index = prev_index;
+	}
+
+	return index;
+}
+
+CITA_INDEX_TYPE cita_gap_span_end(CITA_INDEX_TYPE index)
+{
+	// Find the last entry before the next reusable free space
+	while (!cita_gap_owns_space(index) && ct->elem[index].next_index != 0)
+	{
+		index = ct->elem[index].next_index;
+	}
+
+	return index;
+}
+
+void cita_gap_rebuild_span(CITA_INDEX_TYPE start, CITA_INDEX_TYPE end)
+{
+	// Rebuild gap-run hints across a linked span
+	for (CITA_INDEX_TYPE index = start; ; index = ct->elem[index].next_index)
+	{
+		ct->elem[index].prev_gap_index = start;
+		ct->elem[index].next_gap_index = end;
+		if (index == end)
+			break;
+	}
+}
+
+void cita_gap_unlink(CITA_INDEX_TYPE index)
+{
+	// Clear gap-owner hints before making an element unavailable
+	cita_gap_init_elem(index);
+}
+
+void cita_gap_refresh(CITA_INDEX_TYPE index)
+{
+	// Rebuild gap-run hints around an element
+	if (index == NAI || index >= ct->elem_count || ct->elem[index].next_index == NAI)
+		return;
+
+	// Rebuild the run containing this element
+	cita_gap_rebuild_span(cita_gap_span_start(index), cita_gap_span_end(index));
+
+	// Rebuild the run after this element when it now owns a gap
+	if (cita_gap_owns_space(index) && ct->elem[index].next_index != 0)
+	{
+		CITA_INDEX_TYPE next_index = ct->elem[index].next_index;
+		cita_gap_rebuild_span(next_index, cita_gap_span_end(next_index));
+	}
+}
+
+CITA_INDEX_TYPE cita_gap_first_at_or_after(CITA_INDEX_TYPE index)
+{
+	// Read the entry before the next reusable free space
+	if (index == NAI || index >= ct->elem_count || ct->elem[index].next_index == NAI)
+		return NAI;
+
+	return ct->elem[index].next_gap_index;
+}
+
+CITA_INDEX_TYPE cita_gap_next_linked(CITA_INDEX_TYPE index)
+{
+	// Find the next entry before a reusable free space
+	if (index == NAI || index >= ct->elem_count || ct->elem[index].next_index == 0)
+		return NAI;
+
+	return ct->elem[ct->elem[index].next_index].next_gap_index;
+}
+
+CITA_INDEX_TYPE cita_gap_find_free_space(CITA_ADDR_TYPE required_space)
+{
+	// Search gap owners for a reusable free space large enough
+	for (CITA_INDEX_TYPE index = ct->elem[0].next_gap_index; index != NAI; index = cita_gap_next_linked(index))
+		if (cita_range_after_space(index) >= required_space)
+			return index;
+
+	return NAI;
+}
+#endif
 
 int cita_map_update_skip = 1;
 #ifdef CITA_MAP_SCALE
@@ -325,13 +448,7 @@ void cita_map_include_elem(size_t *im0, size_t *im1, CITA_INDEX_TYPE index)
 int cita_map_free_space_after(CITA_INDEX_TYPE index, CITA_ADDR_TYPE *addr, CITA_ADDR_TYPE *addr_end)
 {
 	// Find the reusable free space after an element
-	cita_elem_t *el = &ct->elem[index];
-	if (el->next_index == 0)
-		return 0;
-
-	*addr = cita_align_up(el->addr_end);
-	*addr_end = ct->elem[el->next_index].addr;
-	return *addr < *addr_end;
+	return cita_free_space_after(index, addr, addr_end);
 }
 
 void cita_map_include_free_space_after(size_t *im0, size_t *im1, CITA_INDEX_TYPE index)
@@ -516,16 +633,27 @@ CITA_INDEX_TYPE cita_map_next_cell_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE c
 CITA_INDEX_TYPE cita_map_next_gap_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE cell_start)
 {
 	// Move forwards to the first free space that may overlap the cell
+	#ifdef CITA_GAP_LINKS
+	index = cita_gap_first_at_or_after(index);
 	while (index != NAI)
 	{
 		CITA_ADDR_TYPE addr, addr_end;
-		if (cita_map_free_space_after(index, &addr, &addr_end) && addr_end > cell_start)
+		if (cita_free_space_after(index, &addr, &addr_end) && addr_end > cell_start)
+			break;
+		index = cita_gap_next_linked(index);
+	}
+	#else
+	while (index != NAI)
+	{
+		CITA_ADDR_TYPE addr, addr_end;
+		if (cita_free_space_after(index, &addr, &addr_end) && addr_end > cell_start)
 			break;
 
 		if (ct->elem[index].next_index == 0)
 			return NAI;
 		index = ct->elem[index].next_index;
 	}
+	#endif
 
 	return index;
 }
@@ -552,6 +680,9 @@ void cita_map_store_free_space(cita_map_cell_t *map, size_t im0, size_t im1, CIT
 void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, CITA_INDEX_TYPE gap_index, CITA_ADDR_TYPE rebuild_start, CITA_ADDR_TYPE rebuild_end)
 {
 	// Walk each linked gap once to rebuild free-space values
+	#ifdef CITA_GAP_LINKS
+	gap_index = cita_gap_first_at_or_after(gap_index);
+	#endif
 	while (gap_index != NAI)
 	{
 		cita_elem_t *el = &ct->elem[gap_index];
@@ -568,7 +699,11 @@ void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, 
 				cita_map_store_free_space(map, im0, im1, addr, addr_end);
 		}
 
+		#ifdef CITA_GAP_LINKS
+		gap_index = cita_gap_next_linked(gap_index);
+		#else
 		gap_index = el->next_index;
+		#endif
 	}
 }
 
@@ -596,7 +731,7 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 			while (gap_index != NAI)
 			{
 				CITA_ADDR_TYPE addr, addr_end;
-				if (cita_map_free_space_after(gap_index, &addr, &addr_end))
+				if (cita_free_space_after(gap_index, &addr, &addr_end))
 				{
 					if (addr >= cell_end)
 						break;
@@ -604,9 +739,13 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 						return gap_index;
 				}
 
+				#ifdef CITA_GAP_LINKS
+				gap_index = cita_gap_next_linked(gap_index);
+				#else
 				if (ct->elem[gap_index].next_index == 0)
 					break;
 				gap_index = ct->elem[gap_index].next_index;
+				#endif
 			}
 		}
 
@@ -823,6 +962,27 @@ int cita_check_links(const char *func, int line)
 		ct->elem[ir].extra.link = 0;
 	}
 
+	#ifdef CITA_GAP_LINKS
+	// Go through each linked element to validate gap-run hints
+	int gap_error_count = 0;
+	for (ir=0; ir < ct->elem_count; ir++)
+		if (ct->elem[ir].next_index != NAI)
+		{
+			CITA_INDEX_TYPE expected_prev_gap_index = cita_gap_span_start((CITA_INDEX_TYPE) ir);
+			CITA_INDEX_TYPE expected_next_gap_index = cita_gap_span_end((CITA_INDEX_TYPE) ir);
+
+			if (ct->elem[ir].prev_gap_index != expected_prev_gap_index || ct->elem[ir].next_gap_index != expected_next_gap_index)
+			{
+				gap_error_count++;
+				CITA_PRINT("cita_check_links(): elem[%d] gap links are prev %llu next %llu but expected prev %llu next %llu", ir, (unsigned long long) ct->elem[ir].prev_gap_index, (unsigned long long) ct->elem[ir].next_gap_index, (unsigned long long) expected_prev_gap_index, (unsigned long long) expected_next_gap_index);
+			}
+		}
+
+	// Report gap-owner link anomalies
+	if (gap_error_count)
+		CITA_REPORT("cita_check_links(%s:%d) found %d gap-owner link errors. Input info says \"%s\"", func, line, gap_error_count, cita_input_info);
+	#endif
+
 	// Report anomalies
 	if (unmarked_count)
 		CITA_REPORT("cita_check_links(%s:%d) found %d unlinked elements. Input info says \"%s\"", func, line, unmarked_count, cita_input_info);
@@ -862,6 +1022,11 @@ void cita_table_init()
 	ct->cita_version[iv] = '0' + sizeof(CITA_ADDR_TYPE);			iv += 1;
 	memcpy(&ct->cita_version[iv], "\nIndex ", 7);				iv += 7;
 	ct->cita_version[iv] = '0' + sizeof(ct->elem->prev_index);		iv += 1;
+
+	#ifdef CITA_GAP_LINKS
+	memcpy(&ct->cita_version[iv], "\nGap index ", 11);			iv += 11;
+	ct->cita_version[iv] = '0' + sizeof(ct->elem->prev_gap_index);		iv += 1;
+	#endif
 
 	#ifdef CITA_MAP_SCALE
 	memcpy(&ct->cita_version[iv], "\nMap index ", 11);			iv += 11;
@@ -909,6 +1074,9 @@ void cita_table_init()
 	// Add elem 0 that represents the start of the memory and the table structure that never moves
 	cita_elem_t *el = &ct->elem[0];
 	el->prev_index = el->next_index = 0;
+	#ifdef CITA_GAP_LINKS
+	el->prev_gap_index = el->next_gap_index = 0;
+	#endif
 	el->addr = CITA_ADDR(ct);
 	el->addr_end = CITA_ADDR(ct) + cita_table_size;
 	#ifdef CITA_MAP_SCALE
@@ -1002,6 +1170,10 @@ void cita_free_core(void *ptr, int allow_memset, int32_t index)
 	#ifdef CITA_MAP_SCALE
 	CITA_INDEX_TYPE prev_index = el->prev_index;
 	#endif
+	#ifdef CITA_GAP_LINKS
+	CITA_INDEX_TYPE gap_prev_index = el->prev_index;
+	cita_gap_unlink(index);
+	#endif
 	ct->elem[el->prev_index].next_index = el->next_index;
 	ct->elem[el->next_index].prev_index = el->prev_index;
 
@@ -1009,6 +1181,10 @@ void cita_free_core(void *ptr, int allow_memset, int32_t index)
 	el->addr = el->addr_end = 0;
 	el->next_index = NAI;
 	el->prev_index = ct->available_index;
+	#ifdef CITA_GAP_LINKS
+	cita_gap_init_elem(index);
+	cita_gap_refresh(gap_prev_index);
+	#endif
 	ct->available_index = index;
 	#ifndef CITA_EXCL_TIME
 	el->extra.time_modified = ct->timestamp;
@@ -1066,6 +1242,9 @@ void *cita_malloc(size_t size)
 		index = ct->elem_count - 1;
 		ct->elem[index].prev_index = ct->available_index;
 		ct->elem[index].next_index = NAI;
+		#ifdef CITA_GAP_LINKS
+		cita_gap_init_elem(index);
+		#endif
 		ct->elem[index].addr = ct->elem[index].addr_end = 0;
 		ct->available_index = index;
 	}
@@ -1086,6 +1265,15 @@ void *cita_malloc(size_t size)
 		el->next_index = ct->elem[el->prev_index].next_index;
 	}
 	#else
+	#ifdef CITA_GAP_LINKS
+	// Search linked gap owners for a free space large enough
+	CITA_INDEX_TYPE i = cita_gap_find_free_space(required_space);
+	if (i != NAI)
+	{
+		el->prev_index = i;
+		el->next_index = ct->elem[el->prev_index].next_index;
+	}
+	#else
 	// Traverse the table in linked order to find the first free space large enough
 	CITA_INDEX_TYPE i = 0;
 	do
@@ -1100,6 +1288,7 @@ void *cita_malloc(size_t size)
 		i = ct->elem[i].next_index;
 	}
 	while (i);
+	#endif
 	#endif
 
 	// Get memory from the end if no suitable space was found
@@ -1128,6 +1317,12 @@ void *cita_malloc(size_t size)
 	// Insert our element in the chain
 	ct->elem[el->prev_index].next_index = index;
 	ct->elem[el->next_index].prev_index = index;
+
+	#ifdef CITA_GAP_LINKS
+	// Update gap links around the inserted element
+	cita_gap_refresh(index);
+	cita_gap_refresh(el->prev_index);
+	#endif
 
 	// If the buffer is added at the end of the memory
 	if (el->next_index == 0)
@@ -1220,6 +1415,9 @@ void *cita_realloc(void *ptr, size_t size)
 		#endif
 
 		el->addr_end = el->addr + size;
+		#ifdef CITA_GAP_LINKS
+		cita_gap_refresh(index);
+		#endif
 		#ifdef CITA_MAP_SCALE
 		cita_map_set_elem_range(index);
 		cita_map_include_elem(&map_im0, &map_im1, index);
@@ -1274,8 +1472,15 @@ void *cita_realloc(void *ptr, size_t size)
 		#ifdef CITA_MAP_SCALE
 		CITA_INDEX_TYPE old_prev_index = el->prev_index;
 		#endif
+		#ifdef CITA_GAP_LINKS
+		CITA_INDEX_TYPE gap_old_prev_index = el->prev_index;
+		cita_gap_unlink(index);
+		#endif
 		ct->elem[el->prev_index].next_index = el->next_index;
 		ct->elem[el->next_index].prev_index = el->prev_index;
+		#ifdef CITA_GAP_LINKS
+		cita_gap_refresh(gap_old_prev_index);
+		#endif
 		#ifdef CITA_MAP_SCALE
 		cita_map_include_free_space_after(&old_map_im0, &old_map_im1, old_prev_index);
 		#endif
@@ -1289,6 +1494,10 @@ void *cita_realloc(void *ptr, size_t size)
 		el->next_index = el_new_copy.next_index;
 		ct->elem[el->prev_index].next_index = index;
 		ct->elem[el->next_index].prev_index = index;
+		#ifdef CITA_GAP_LINKS
+		cita_gap_refresh(index);
+		cita_gap_refresh(el->prev_index);
+		#endif
 
 		// Erase the original data
 		#ifdef CITA_FREE_PATTERN
