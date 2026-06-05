@@ -80,13 +80,15 @@
     #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
   #else
     char cita_report_str[300];
-    #if defined(_WIN64)
-      #define CITA_WINAPI
-    #else
-      #define CITA_WINAPI __stdcall
-    #endif
+    #define CITA_WINAPI __stdcall
     #if !defined(_WINDOWS_) && !defined(_WINUSER_)
-      extern __declspec(dllimport) int CITA_WINAPI MessageBoxA(void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType);
+      #ifdef NO_STRICT
+        typedef void *cita_win_hwnd_t;
+      #else
+        struct HWND__;
+        typedef struct HWND__ *cita_win_hwnd_t;
+      #endif
+      extern __declspec(dllimport) int CITA_WINAPI MessageBoxA(cita_win_hwnd_t hWnd, const char *lpText, const char *lpCaption, unsigned int uType);
     #endif
     #if !defined(_WINDOWS_) && !defined(_APISETDEBUG_) && !defined(_DEBUGAPI_H_)
       extern __declspec(dllimport) void CITA_WINAPI DebugBreak(void);
