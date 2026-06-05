@@ -861,8 +861,11 @@ void cita_table_init()
 	if (s / 100) { ct->cita_version[iv] = '0' + s / 100; s %= 100;		iv += 1; }
 	if (s / 10)  { ct->cita_version[iv] = '0' + s / 10;  s %= 10;		iv += 1; }
 	ct->cita_version[iv] = '0' + s;						iv += 1;
-	ct->cita_version[iv] = '\0';						/*iv += 1;*/
 	#endif
+	ct->cita_version[iv] = '\0';						iv += 1;
+
+	// Compute the actual size of the written table header
+	size_t cita_table_size = (size_t) ct->version_offset + (size_t) iv;
 
 	cita_inc_event_counter();
 
@@ -870,7 +873,7 @@ void cita_table_init()
 	ct->available_index = NAI;
 
 	// Alloc table
-	ct->elem = CITA_PTR(cita_align_up(CITA_ADDR(ct) + sizeof(cita_table_t)));
+	ct->elem = CITA_PTR(cita_align_up(CITA_ADDR(ct) + cita_table_size));
 	ct->elem_count = 1;
 	ct->elem_as = CITA_INIT_ELEM_AS;
 
@@ -882,7 +885,7 @@ void cita_table_init()
 	cita_elem_t *el = &ct->elem[0];
 	el->prev_index = el->next_index = 0;
 	el->addr = CITA_ADDR(ct);
-	el->addr_end = CITA_ADDR(ct) + sizeof(cita_table_t);
+	el->addr_end = CITA_ADDR(ct) + cita_table_size;
 	#ifdef CITA_MAP_SCALE
 	ct->elem[0].map_start = 0;
 	ct->elem[0].map_end = 0;
