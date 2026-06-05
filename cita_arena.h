@@ -62,7 +62,7 @@
 
   #define CITA_MEM_START ((CITA_ADDR_TYPE) 0)
   #define CITA_MEM_END (cita_arena_global->mem_as)
-  #define CITA_MEM_ENLARGE(new_end) { cita_arena_global->mem_as = ((new_end) + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1); cita_arena_global->mem = realloc(cita_arena_global->mem, cita_arena_global->mem_as); }
+  #define CITA_MEM_ENLARGE(new_end) { cita_arena_global->mem_as = ((new_end) + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1); cita_arena_global->mem = realloc(cita_arena_global->mem, cita_arena_global->mem_as); ct = (cita_table_t *) cita_arena_global->mem; }
   #define CITA_PTR(addr) ((void *) &cita_arena_global->mem[addr])
   #define CITA_ADDR(ptr) ((ptr) ? (CITA_ADDR_TYPE) ((uintptr_t) (ptr) - (uintptr_t) cita_arena_global->mem) : 0)
 
@@ -89,7 +89,7 @@ const char *cita_get_filename(const char *path)
 CITA_ADDR_TYPE cita_arena_malloc(cita_arena_t *arena, size_t size, const char *filename, const char *func, int line)
 {
 	cita_arena_global = arena;
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	ct = (cita_table_t *) cita_arena_global->mem;
 	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_malloc(size);
@@ -100,14 +100,14 @@ CITA_ADDR_TYPE cita_arena_malloc(cita_arena_t *arena, size_t size, const char *f
 void cita_arena_free(cita_arena_t *arena, CITA_ADDR_TYPE buffer_addr, const char *filename, const char *func, int line)
 {
 	cita_arena_global = arena;
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	ct = (cita_table_t *) cita_arena_global->mem;
 	cita_free(CITA_PTR(buffer_addr));
 }
 
 CITA_ADDR_TYPE cita_arena_calloc(cita_arena_t *arena, size_t nmemb, size_t size, const char *filename, const char *func, int line)
 {
 	cita_arena_global = arena;
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	ct = (cita_table_t *) cita_arena_global->mem;
 	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_calloc(nmemb, size);
@@ -118,7 +118,7 @@ CITA_ADDR_TYPE cita_arena_calloc(cita_arena_t *arena, size_t nmemb, size_t size,
 CITA_ADDR_TYPE cita_arena_realloc(cita_arena_t *arena, CITA_ADDR_TYPE buffer_addr, size_t size, const char *filename, const char *func, int line)
 {
 	cita_arena_global = arena;
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	ct = (cita_table_t *) cita_arena_global->mem;
 	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *new_ptr = cita_realloc(CITA_PTR(buffer_addr), size);
@@ -130,7 +130,7 @@ CITA_ADDR_TYPE cita_arena_realloc(cita_arena_t *arena, CITA_ADDR_TYPE buffer_add
 size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buffer_addr, size_t needed_count, size_t alloc_count, size_t size_elem, double inc_ratio, uint8_t pattern, const char *filename, const char *func, int line)
 {
 	cita_arena_global = arena;
-	cita_table = (cita_table_t *) cita_arena_global->mem;
+	ct = (cita_table_t *) cita_arena_global->mem;
 	size_t newsize;
 	void *p;
 
@@ -163,7 +163,7 @@ size_t cita_arena_alloc_enough_pattern(cita_arena_t *arena, CITA_ADDR_TYPE *buff
 
 size_t cita_arena_get_min_size(cita_arena_t *arena)
 {
-	cita_table = (cita_table_t *) arena->mem;
+	ct = (cita_table_t *) arena->mem;
 	return cita_find_end_addr();
 }
 

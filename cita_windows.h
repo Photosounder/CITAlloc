@@ -188,11 +188,12 @@ static void cita_mem_enlarge(uintptr_t new_end)
 	// Commit new memory
 	if (new_end > CITA_MEM_END)
 	{
-		void *ret = VirtualAlloc((void *) CITA_MEM_END, new_end-CITA_MEM_START, 0x00001000 /*MEM_COMMIT*/, 0x04 /*PAGE_READWRITE*/);
+		CITA_ADDR_TYPE old_end = CITA_MEM_END;
+		void *ret = VirtualAlloc((void *) old_end, new_end-old_end, 0x00001000 /*MEM_COMMIT*/, 0x04 /*PAGE_READWRITE*/);
 
 		if (ret == NULL)
 		{
-			CITA_REPORT("cita_mem_enlarge(): failed to commit memory using VirtualAlloc() from %zd to %zd MB. Error: %lu\n", (CITA_MEM_END-CITA_MEM_START)>>20, (new_end-CITA_MEM_START)>>20, GetLastError());
+			CITA_REPORT("cita_mem_enlarge(): failed to commit memory using VirtualAlloc() from %zd to %zd MB. Error: %lu\n", (old_end-CITA_MEM_START)>>20, (new_end-CITA_MEM_START)>>20, GetLastError());
 			exit(EXIT_FAILURE);
 		}
 
