@@ -372,15 +372,20 @@ int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
 
 	#ifdef CITA_MAP_SCALE
 
-	// Find a starting index from the map
-	CITA_INDEX_TYPE *map = CITA_PTR(ct->elem[2].addr);
-	size_t im = (addr - CITA_MEM_START) >> CITA_MAP_SCALE;
-	i = im < cita_map_count ? map[im] : NAI;
 	CITA_INDEX_TYPE i_starting = i;
 
-	// If the map index is unusable, start from the last range
-	if (i == NAI || i >= ct->elem_count || ct->elem[i].next_index == NAI)
-		i = ct->elem[0].prev_index;
+	if (cita_map_ready)
+	{
+		// Find a starting index from the map
+		CITA_INDEX_TYPE *map = CITA_PTR(ct->elem[2].addr);
+		size_t im = (addr - CITA_MEM_START) >> CITA_MAP_SCALE;
+		i = im < cita_map_count ? map[im] : NAI;
+		i_starting = i;
+
+		// If the map index is unusable, start from the last range
+		if (i == NAI || i >= ct->elem_count || ct->elem[i].next_index == NAI)
+			i = ct->elem[0].prev_index;
+	}
 
 	#endif
 
@@ -771,7 +776,9 @@ void *cita_malloc(size_t size)
 	if (el->next_index == 0)
 	{
 		// Enlarge memory if needed
-		cita_enlarge_memory(el->addr_end);
+		CITA_ADDR_TYPE req = el->addr_end;
+		cita_enlarge_memory(req);
+		el = &ct->elem[index];
 
 		// Report failure to obtain enough 
 		if (el->addr_end > CITA_MEM_END)
@@ -787,6 +794,7 @@ void *cita_malloc(size_t size)
 	ct->elem[index].map_end = 0;
 	if (ct->elem_count > 3)
 		cita_map_update_range(index);
+	el = &ct->elem[index];
 	#endif
 
 	cita_check_links_internal(__func__, __LINE__);
@@ -835,7 +843,10 @@ void *cita_realloc(void *ptr, size_t size)
 	{
 		// Enlarge memory if needed
 		if (el->addr + size > CITA_MEM_END)
+		{
 			cita_enlarge_memory(el->addr + size);
+			el = &ct->elem[index];
+		}
 
 		space = CITA_MEM_END - el->addr;
 	}
@@ -859,6 +870,7 @@ void *cita_realloc(void *ptr, size_t size)
 				map_im1 = ct->elem[index].map_end;
 		}
 		cita_map_rebuild_range(map_im0, map_im1);
+		el = &ct->elem[index];
 		#endif
 	}
 	else
@@ -873,6 +885,11 @@ void *cita_realloc(void *ptr, size_t size)
 		int map_update_skip = cita_map_update_skip;
 		cita_map_update_skip = 1;
 		void *ptr_new = cita_malloc(size);
+		if (ptr_new == NULL)
+		{
+			cita_map_update_skip = map_update_skip;
+			return NULL;
+		}
 		cita_elem_t el_new_copy = ct->elem[cita_last_malloc_index];
 		cita_free_core(ptr_new, 0, cita_last_malloc_index);
 		cita_map_update_skip = map_update_skip;
@@ -925,6 +942,7 @@ void *cita_realloc(void *ptr, size_t size)
 				old_map_im1 = ct->elem[index].map_end;
 		}
 		cita_map_rebuild_range(old_map_im0, old_map_im1);
+		el = &ct->elem[index];
 		#endif
 	}
 

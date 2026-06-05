@@ -80,9 +80,14 @@
     #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
   #else
     char cita_report_str[300];
-    #include <winuser.h>
-    extern WINBASEAPI VOID WINAPI DebugBreak(VOID);
-    #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt"\n\nDebug?", ##__VA_ARGS__); int r = MessageBoxA(NULL, cita_report_str, "CIT Alloc report", MB_YESNO | MB_TOPMOST | MB_ICONERROR); if (r == IDYES) DebugBreak(); }
+    #if defined(_WIN64)
+      #define CITA_WINAPI
+    #else
+      #define CITA_WINAPI __stdcall
+    #endif
+    extern __declspec(dllimport) int CITA_WINAPI MessageBoxA(void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType);
+    extern __declspec(dllimport) void CITA_WINAPI DebugBreak(void);
+    #define CITA_REPORT(fmt, ...) { snprintf(cita_report_str, sizeof(cita_report_str), fmt"\n\nDebug?", ##__VA_ARGS__); int r = MessageBoxA(NULL, cita_report_str, "CIT Alloc report", 0x00000004u /*MB_YESNO*/ | 0x00040000u /*MB_TOPMOST*/ | 0x00000010u /*MB_ICONERROR*/); if (r == 6 /*IDYES*/) DebugBreak(); }
   #endif
   #endif
 

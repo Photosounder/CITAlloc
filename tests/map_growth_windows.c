@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define CITA_REPORT_TO_STDERR
+#define CITA_INIT_ELEM_AS 4
 #define CITA_WIN_IMPLEMENTATION
 #include "../cita_windows.h"
 
