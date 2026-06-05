@@ -85,7 +85,7 @@ CITA_GAP_LINK_SCALE: Power of 2 for fake gap-link boundaries.
   Defaults to CITA_MAP_SCALE when the map is enabled, otherwise 16.
 CITA_PADDING: Padding size between buffers. Reveals buffer
   overruns.
-CITA_TIME_IS_COUNTER: Makes the timestamps be cita_event_counter
+CITA_TIME_IS_COUNTER: Makes the timestamps be the event counter
 
 */
 
@@ -193,17 +193,24 @@ typedef struct
 	volatile int32_t timestamp;	// meant to be updated by the host
 	cita_elem_t *elem;
 	size_t elem_count, elem_as;
+	int32_t event_counter, last_malloc_index;
+	int8_t map_update_skip;
+	#ifdef CITA_MAP_SCALE
+	size_t map_count;
+	int8_t map_ready, map_resizing;
+	#endif
 	char cita_version[96];
 } cita_table_t;
 
 CITA_TLS_HEAP cita_table_t *ct=NULL;
 CITA_TLS char *cita_input_info=NULL;
-CITA_TLS_HEAP int cita_event_counter = -1;
+
 void cita_inc_event_counter()
 {
-	cita_event_counter++;
+	// Update the per-table event counter
+	ct->event_counter++;
 	#ifdef CITA_TIME_IS_COUNTER
-	ct->timestamp = cita_event_counter;
+	ct->timestamp = ct->event_counter;
 	#endif
 }
 
@@ -381,11 +388,7 @@ CITA_INDEX_TYPE cita_gap_find_free_space(CITA_ADDR_TYPE required_space)
 }
 #endif
 
-int cita_map_update_skip = 1;
 #ifdef CITA_MAP_SCALE
-size_t cita_map_count = 0;
-int8_t cita_map_ready = 0, cita_map_resizing = 0;
-
 void cita_map_rebuild_range(size_t im0, size_t im1);
 
 CITA_MAPSIZE_TYPE cita_map_space_value(CITA_ADDR_TYPE size)
@@ -503,10 +506,10 @@ void cita_map_include_moved_elem(size_t *im0, size_t *im1, CITA_INDEX_TYPE index
 
 void cita_map_ensure_capacity()
 {
-	if (!cita_map_ready || cita_map_resizing)
+	if (ct == NULL || !ct->map_ready || ct->map_resizing)
 		return;
 
-	while (cita_map_count < CITA_MAP_COUNT_MIN)
+	while (ct->map_count < CITA_MAP_COUNT_MIN)
 	{
 		size_t max_count = (size_t) CITA_MAP_INDEX_NAI;
 		if (CITA_MAP_COUNT_MIN > max_count)
@@ -515,7 +518,7 @@ void cita_map_ensure_capacity()
 			return;
 		}
 
-		size_t old_count = cita_map_count;
+		size_t old_count = ct->map_count;
 		size_t new_count = old_count;
 		if (new_count == 0)
 			new_count = CITA_MAP_COUNT_MIN;
@@ -541,12 +544,12 @@ void cita_map_ensure_capacity()
 		CITA_ADDR_TYPE old_table_addr = ct->elem[1].addr;
 		CITA_ADDR_TYPE old_table_addr_end = ct->elem[1].addr_end;
 
-		int update_skip = cita_map_update_skip;
-		cita_map_update_skip = 1;
-		cita_map_resizing = 1;
+		int update_skip = ct->map_update_skip;
+		ct->map_update_skip = 1;
+		ct->map_resizing = 1;
 		void *map_ptr = cita_realloc(CITA_PTR(ct->elem[2].addr), new_count * sizeof(cita_map_cell_t));
-		cita_map_resizing = 0;
-		cita_map_update_skip = update_skip;
+		ct->map_resizing = 0;
+		ct->map_update_skip = update_skip;
 
 		if (map_ptr == NULL)
 		{
@@ -554,12 +557,12 @@ void cita_map_ensure_capacity()
 			return;
 		}
 
-		cita_map_count = new_count;
+		ct->map_count = new_count;
 		cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 		cita_map_init_cells(map, old_count, new_count - 1);
 
 		// Rebuild cells around the old and new map positions after resizing
-		if (!cita_map_update_skip)
+		if (!ct->map_update_skip)
 		{
 			size_t im0 = 1, im1 = 0;
 			if (old_table_prev_index != ct->elem[1].prev_index || old_table_addr != ct->elem[1].addr || old_table_addr_end != ct->elem[1].addr_end)
@@ -749,7 +752,7 @@ void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, 
 
 CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 {
-	if (!cita_map_ready)
+	if (!ct->map_ready)
 		return NAI;
 
 	// Make sure the map covers the current heap before searching it
@@ -759,7 +762,7 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 	cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 
 	// Search map cells for a reusable free space that may be large enough
-	for (size_t im = 0; im < cita_map_count; im++)
+	for (size_t im = 0; im < ct->map_count; im++)
 		if (map[im].free_space >= required_value)
 		{
 			CITA_ADDR_TYPE cell_start, cell_end;
@@ -794,19 +797,19 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 
 void cita_map_rebuild_range(size_t im0, size_t im1)
 {
-	if (cita_map_update_skip)
+	if (ct->map_update_skip)
 		return;
 
 	// Ensure the map is large enough for the current heap
 	cita_map_ensure_capacity();
 
 	// Validate the requested cell range
-	if (im0 > im1 || cita_map_count == 0)
+	if (im0 > im1 || ct->map_count == 0)
 		return;
-	if (im1 >= cita_map_count)
+	if (im1 >= ct->map_count)
 	{
-		CITA_REPORT("cita_map_rebuild_range(%zd, %zd): map cell %zd is outside of the %zd allocated cells. Input info says \"%s\"", im0, im1, im1, cita_map_count, cita_input_info);
-		im1 = cita_map_count - 1;
+		CITA_REPORT("cita_map_rebuild_range(%zd, %zd): map cell %zd is outside of the %zd allocated cells. Input info says \"%s\"", im0, im1, im1, ct->map_count, cita_input_info);
+		im1 = ct->map_count - 1;
 	}
 
 	// Find the first linked element that may overlap the rebuilt range
@@ -849,7 +852,7 @@ void cita_map_rebuild_range(size_t im0, size_t im1)
 
 void cita_map_update_range(CITA_INDEX_TYPE index)
 {
-	if (cita_map_update_skip)
+	if (ct->map_update_skip)
 		return;
 
 	// Include the element and adjacent free spaces in the rebuild range
@@ -887,12 +890,12 @@ int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
 
 	CITA_INDEX_TYPE i_starting = i;
 
-	if (cita_map_ready)
+	if (ct->map_ready)
 	{
 		// Find a starting index from the map
 		cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 		size_t im = (addr - CITA_MEM_START) >> CITA_MAP_SCALE;
-		i = im < cita_map_count ? map[im].index : NAI;
+		i = im < ct->map_count ? map[im].index : NAI;
 		i_starting = i;
 
 		// If the map index is unusable, start from the last range
@@ -1052,6 +1055,16 @@ void cita_table_init()
 	// Allocate table structure
 	ct = CITA_PTR(CITA_MEM_START);
 
+	// Initialise per-table state before internal allocations
+	ct->event_counter = -1;
+	ct->last_malloc_index = NAI;
+	ct->map_update_skip = 1;
+	#ifdef CITA_MAP_SCALE
+	ct->map_count = 0;
+	ct->map_ready = 0;
+	ct->map_resizing = 0;
+	#endif
+
 	// Write signature and version so the host knows it's CIT Alloc
 	memcpy(ct->cita_signature, "CITA", 4);
 
@@ -1143,17 +1156,17 @@ void cita_table_init()
 	// Add elem 2 which will always be the map
 	orig_info = cita_input_info;
 	cita_input_info = "CITA map";
-	cita_map_count = CITA_MAP_COUNT_MIN;
-	(void) cita_malloc(cita_map_count * sizeof(cita_map_cell_t));
+	ct->map_count = CITA_MAP_COUNT_MIN;
+	(void) cita_malloc(ct->map_count * sizeof(cita_map_cell_t));
 	cita_input_info = orig_info;
 
 	// Initialise the current state of the map
 	cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
-	cita_map_init_cells(map, 0, cita_map_count - 1);
+	cita_map_init_cells(map, 0, ct->map_count - 1);
 	map[0].index = 0;
 
-	cita_map_ready = 1;
-	cita_map_update_skip = 0;
+	ct->map_ready = 1;
+	ct->map_update_skip = 0;
 	cita_map_ensure_capacity();
 
 	// Rebuild the initial map cells around the internal allocations
@@ -1244,8 +1257,6 @@ void cita_free(void *ptr)
 {
 	cita_free_core(ptr, 1, NAI);
 }
-
-int32_t cita_last_malloc_index = NAI;
 
 void *cita_malloc(size_t size)
 {
@@ -1390,7 +1401,7 @@ void *cita_malloc(size_t size)
 	#endif
 
 	cita_check_links_internal(__func__, __LINE__);
-	cita_last_malloc_index = index;
+	ct->last_malloc_index = index;
 
 	return CITA_PTR(el->addr);
 }
@@ -1482,17 +1493,17 @@ void *cita_realloc(void *ptr, size_t size)
 		#endif
 
 		// Allocate new element to find a suitable address and trigger any map enlargement then free it
-		int map_update_skip = cita_map_update_skip;
-		cita_map_update_skip = 1;
+		int map_update_skip = ct->map_update_skip;
+		ct->map_update_skip = 1;
 		void *ptr_new = cita_malloc(size);
 		if (ptr_new == NULL)
 		{
-			cita_map_update_skip = map_update_skip;
+			ct->map_update_skip = map_update_skip;
 			return NULL;
 		}
-		cita_elem_t el_new_copy = ct->elem[cita_last_malloc_index];
-		cita_free_core(ptr_new, 0, cita_last_malloc_index);
-		cita_map_update_skip = map_update_skip;
+		cita_elem_t el_new_copy = ct->elem[ct->last_malloc_index];
+		cita_free_core(ptr_new, 0, ct->last_malloc_index);
+		ct->map_update_skip = map_update_skip;
 
 		// Guard against the new buffer being linked to the old one
 		if (el_new_copy.prev_index == index)

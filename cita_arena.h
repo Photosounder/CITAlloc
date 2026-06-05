@@ -62,7 +62,14 @@
 
   #define CITA_MEM_START ((CITA_ADDR_TYPE) 0)
   #define CITA_MEM_END (cita_arena_global->mem_as)
-  #define CITA_MEM_ENLARGE(new_end) { cita_arena_global->mem_as = ((new_end) + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1); cita_arena_global->mem = realloc(cita_arena_global->mem, cita_arena_global->mem_as); ct = (cita_table_t *) cita_arena_global->mem; }
+  // Keep the element table pointer valid if realloc moves the arena
+  #define CITA_MEM_ENLARGE(new_end) { \
+	CITA_ADDR_TYPE elem_addr = (ct && ct->elem) ? CITA_ADDR(ct->elem) : 0; \
+	cita_arena_global->mem_as = ((new_end) + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1); \
+	cita_arena_global->mem = realloc(cita_arena_global->mem, cita_arena_global->mem_as); \
+	ct = (cita_table_t *) cita_arena_global->mem; \
+	if (elem_addr) ct->elem = CITA_PTR(elem_addr); \
+	}
   #define CITA_PTR(addr) ((void *) &cita_arena_global->mem[addr])
   #define CITA_ADDR(ptr) ((ptr) ? (CITA_ADDR_TYPE) ((uintptr_t) (ptr) - (uintptr_t) cita_arena_global->mem) : 0)
 

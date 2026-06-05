@@ -22,9 +22,9 @@ static int test_validate_map(const char *label)
 	size_t needed = test_map_needed_count();
 	cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 
-	if (cita_map_count < needed)
+	if (ct->map_count < needed)
 	{
-		fprintf(stderr, "%s: map has %zu cells but needs %zu\n", label, cita_map_count, needed);
+		fprintf(stderr, "%s: map has %zu cells but needs %zu\n", label, ct->map_count, needed);
 		return 1;
 	}
 
