@@ -76,12 +76,14 @@
   #ifndef CITA_PRINT
     #define CITA_PRINT(fmt, ...) { fprintf(stderr, fmt"\n", ##__VA_ARGS__); }
   #endif
+  #ifndef CITA_WINAPI
+    #define CITA_WINAPI __stdcall
+  #endif
   #ifndef CITA_REPORT
   #ifdef CITA_REPORT_TO_STDERR
     #define CITA_REPORT(fmt, ...) { CITA_PRINT(fmt, ##__VA_ARGS__) }
   #else
     char cita_report_str[300];
-    #define CITA_WINAPI __stdcall
     #if !defined(_WINDOWS_) && !defined(_WINUSER_)
       #ifdef NO_STRICT
         typedef void *cita_win_hwnd_t;
@@ -104,11 +106,12 @@ CRITICAL_SECTION cita_mutex;
 #define CITA_UNLOCK LeaveCriticalSection(&cita_mutex);
 
 #ifndef _MEMORYAPI_H_
-  extern __declspec(dllimport) void *VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
-  extern __declspec(dllimport) size_t VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
+  extern __declspec(dllimport) void *CITA_WINAPI VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
+  extern __declspec(dllimport) int CITA_WINAPI VirtualFree(void *lpAddress, size_t dwSize, unsigned long dwFreeType);
+  extern __declspec(dllimport) size_t CITA_WINAPI VirtualQuery(const void *lpAddress, MEMORY_BASIC_INFORMATION *lpBuffer, size_t dwLength);
 #endif
 #ifndef _ERRHANDLING_H_
-  extern unsigned long GetLastError();
+  extern unsigned long CITA_WINAPI GetLastError(void);
 #endif
 
 size_t windows_memory_max_usable_block(uintptr_t *base_addr)
@@ -214,9 +217,38 @@ static void cita_mem_enlarge(uintptr_t new_end)
 }
 
 #define CITA_MEM_ENLARGE(new_end) { cita_mem_enlarge((new_end)); }
+static void cita_win_mem_shrink(void);
+#define CITA_MEM_SHRINK() { cita_win_mem_shrink(); }
   
 #define CITA_IMPLEMENTATION
 #include "cit_alloc.h"
+
+static void cita_win_mem_shrink(void)
+{
+	// Check whether enough committed memory can be recovered
+	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
+	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<12)-1) & ~(((CITA_ADDR_TYPE) 1<<12)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 32 << 20))
+		return;
+
+	// Shrink the map before deciding the final committed end
+	used_end = cita_shrink_map(used_end);
+	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<12)-1) & ~(((CITA_ADDR_TYPE) 1<<12)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 32 << 20))
+		return;
+
+	// Decommit the recovered tail while keeping the address range reserved
+	CITA_ADDR_TYPE old_end = CITA_MEM_END;
+	if (VirtualFree((void *) new_end, old_end - new_end, 0x00004000 /*MEM_DECOMMIT*/))
+	{
+		CITA_MEM_END = new_end;
+		#ifdef CITA_MAP_SCALE
+		cita_map_ensure_capacity();
+		#endif
+	}
+	else
+		CITA_REPORT("cita_win_mem_shrink(): failed to decommit memory from %zd to %zd MB. Error: %lu\n", (new_end-CITA_MEM_START)>>20, (old_end-CITA_MEM_START)>>20, GetLastError());
+}
 
 char input_info[60];
 

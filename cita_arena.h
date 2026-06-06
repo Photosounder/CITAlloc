@@ -72,6 +72,8 @@
 	}
   #define CITA_PTR(addr) ((void *) &cita_arena_global->mem[addr])
   #define CITA_ADDR(ptr) ((ptr) ? (CITA_ADDR_TYPE) ((uintptr_t) (ptr) - (uintptr_t) cita_arena_global->mem) : 0)
+  static void cita_arena_mem_shrink(void);
+  #define CITA_MEM_SHRINK() { cita_arena_mem_shrink(); }
 
   #ifndef CITA_PRINT
     #define CITA_PRINT(fmt, ...) { fprintf(stderr, fmt"\n", ##__VA_ARGS__); }
@@ -82,6 +84,39 @@
   
   #define CITA_IMPLEMENTATION
   #include "cit_alloc.h"
+
+static void cita_arena_mem_shrink(void)
+{
+	// Check whether enough arena memory can be recovered
+	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
+	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 256 << 10))
+		return;
+
+	// Shrink the map before deciding the final arena size
+	used_end = cita_shrink_map(used_end);
+	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 256 << 10))
+		return;
+
+	// Reallocate the arena and restore pointers that depend on its base
+	CITA_ADDR_TYPE elem_addr = CITA_ADDR(ct->elem);
+	void *mem = realloc(cita_arena_global->mem, new_end);
+	if (mem)
+	{
+		cita_arena_global->mem = mem;
+		cita_arena_global->mem_as = new_end;
+		ct = (cita_table_t *) cita_arena_global->mem;
+		ct->elem = CITA_PTR(elem_addr);
+		#ifdef CITA_MAP_SCALE
+		cita_map_ensure_capacity();
+		#endif
+	}
+	else
+	{
+		CITA_REPORT("cita_arena_mem_shrink(): failed to shrink arena memory from %zu to %zu bytes.\n", cita_arena_global->mem_as, (size_t) new_end);
+	}
+}
 
 char input_info[60];
 

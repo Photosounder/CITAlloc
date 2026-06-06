@@ -47,7 +47,7 @@
       #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
     #endif
     #define CITA_ALIGN 16		// all allocations will be aligned to 16 bytes
-    #define CITA_MAP_SCALE 13		// means a map cell covers 8 kB
+    #define CITA_MAP_SCALE 14		// means a map cell covers 16 kB
     #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat
     #define CITA_INFO_LEN 56
 
@@ -55,6 +55,8 @@
     #define CITA_MEM_START ((uintptr_t) &__heap_base)
     #define CITA_MEM_END ((CITA_ADDR_TYPE) __builtin_wasm_memory_size(0) << 16)
     #define CITA_MEM_ENLARGE(new_end) { __builtin_wasm_memory_grow(0, ((new_end)-CITA_MEM_END+(((CITA_ADDR_TYPE) 1<<16)-1))>>16); }
+    static void cita_wasm_mem_shrink(void);
+    #define CITA_MEM_SHRINK() { cita_wasm_mem_shrink(); }
     #define CITA_PTR(addr) ((void *) (addr))
     #define CITA_ADDR(ptr) ((uintptr_t) (ptr))
 
@@ -64,6 +66,25 @@
     
     #define CITA_IMPLEMENTATION
     #include "cit_alloc.h"
+
+static void cita_wasm_mem_shrink(void)
+{
+	// Check whether enough WebAssembly memory can be recovered
+	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
+	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 64 << 10))
+		return;
+
+	// Shrink the map before reporting the final aligned memory size
+	used_end = cita_shrink_map(used_end);
+	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 64 << 10))
+		return;
+
+	// Report the shrink opportunity to the host
+	snprintf(cita_report_cmd, sizeof(cita_report_cmd), "Shrink memory to %zu bytes", (size_t) new_end);
+	wahe_run_command(cita_report_cmd);
+}
 
 char input_info[60];
 

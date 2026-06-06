@@ -52,6 +52,7 @@ CITA_MEM_START: Start address of the memory where everything will
 CITA_MEM_END: A way to obtain the address of the end of the memory
 CITA_MEM_ENLARGE(new_end): A way to enlarge the memory, doesn't
   need to return anything
+CITA_MEM_SHRINK(): Optional way to shrink the memory
 CITA_PTR(addr): How to turn a CITA address into an actual pointer.
   This enables the use of CITA inside buffers where "addresses"
   are indices.
@@ -121,6 +122,7 @@ extern void *cita_realloc(void *ptr, size_t size);
 
 extern int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only);
 extern CITA_ADDR_TYPE cita_find_end_addr();
+extern CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end);
 
 CITA_TLS extern char *cita_input_info;
 
@@ -194,7 +196,7 @@ typedef struct
 	cita_elem_t *elem;
 	size_t elem_count, elem_as;
 	int32_t event_counter, last_malloc_index;
-	int8_t map_update_skip;
+	int8_t map_update_skip, shrink_in_progress;
 	#ifdef CITA_MAP_SCALE
 	size_t map_count;
 	int8_t map_ready, map_resizing;
@@ -253,6 +255,8 @@ void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 		memset(CITA_PTR(start), CITA_FREE_PATTERN, CITA_MEM_END - start);
 	#endif
 }
+
+void cita_free_core(void *ptr, int allow_memset, int32_t index);
 
 #ifdef CITA_GAP_LINKS
 #ifndef CITA_GAP_LINK_SCALE
@@ -573,6 +577,183 @@ void cita_map_ensure_capacity()
 	}
 }
 
+size_t cita_map_count_for_mem_end(CITA_ADDR_TYPE mem_end)
+{
+	// Compute how many map cells are needed to cover a memory end
+	if (mem_end <= CITA_MEM_START)
+		return 1;
+	return (size_t) ((mem_end - CITA_MEM_START + CITA_MAP_CELL_SIZE-1) >> CITA_MAP_SCALE);
+}
+
+CITA_ADDR_TYPE cita_find_end_addr_except(CITA_INDEX_TYPE except_index)
+{
+	// Find the highest used address while ignoring one element
+	CITA_ADDR_TYPE end_addr = CITA_MEM_START;
+	for (CITA_INDEX_TYPE index = 0; ; index = ct->elem[index].next_index)
+	{
+		if (index != except_index && ct->elem[index].addr_end > end_addr)
+			end_addr = ct->elem[index].addr_end;
+		if (ct->elem[index].next_index == 0)
+			break;
+	}
+
+	return end_addr;
+}
+
+size_t cita_map_count_for_payload_end(CITA_ADDR_TYPE payload_end)
+{
+	// Compute the map size needed if the map is placed after this payload
+	CITA_ADDR_TYPE mem_end = payload_end;
+	for (;;)
+	{
+		size_t count = cita_map_count_for_mem_end(mem_end);
+		CITA_ADDR_TYPE map_end = cita_align_up(payload_end) + (CITA_ADDR_TYPE) count * sizeof(cita_map_cell_t);
+		CITA_ADDR_TYPE next_mem_end = map_end > payload_end ? map_end : payload_end;
+		size_t next_count = cita_map_count_for_mem_end(next_mem_end);
+		if (next_count == count)
+			return count;
+		mem_end = next_mem_end;
+	}
+}
+
+CITA_ADDR_TYPE cita_map_end_for_payload_end(CITA_ADDR_TYPE payload_end)
+{
+	// Compute the used end if the map is stored after this payload
+	size_t count = cita_map_count_for_payload_end(payload_end);
+	CITA_ADDR_TYPE map_end = cita_align_up(payload_end) + (CITA_ADDR_TYPE) count * sizeof(cita_map_cell_t);
+	return map_end > payload_end ? map_end : payload_end;
+}
+
+CITA_ADDR_TYPE cita_shrink_end_addr()
+{
+	// Estimate the highest used address after a possible map shrink
+	if (ct == NULL)
+		return CITA_MEM_START;
+	CITA_ADDR_TYPE end_addr = cita_find_end_addr();
+	if (!ct->map_ready || ct->map_resizing || ct->elem[0].prev_index != 2)
+		return end_addr;
+
+	return cita_map_end_for_payload_end(cita_find_end_addr_except(2));
+}
+
+CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
+{
+	if (ct == NULL || !ct->map_ready || ct->map_resizing)
+		return mem_end;
+	if (ct->elem[0].prev_index != 2 && cita_map_count_for_mem_end(mem_end) >= ct->map_count)
+		return cita_find_end_addr();
+
+	for (;;)
+	{
+		// Stop if the current map is already compact enough
+		CITA_ADDR_TYPE payload_end = cita_find_end_addr_except(2);
+		if (payload_end < mem_end)
+			mem_end = payload_end;
+		size_t new_count = cita_map_count_for_payload_end(mem_end);
+		if (new_count >= ct->map_count && ct->elem[2].addr_end <= mem_end)
+			break;
+
+		// Remember old positions so the retained map cells can be rebuilt
+		size_t old_count = ct->map_count;
+		CITA_INDEX_TYPE old_map_prev_index = ct->elem[2].prev_index;
+		CITA_ADDR_TYPE old_map_addr = ct->elem[2].addr;
+		CITA_ADDR_TYPE old_map_addr_end = ct->elem[2].addr_end;
+		CITA_INDEX_TYPE old_table_prev_index = ct->elem[1].prev_index;
+		CITA_ADDR_TYPE old_table_addr = ct->elem[1].addr;
+		CITA_ADDR_TYPE old_table_addr_end = ct->elem[1].addr_end;
+		size_t new_size = new_count * sizeof(cita_map_cell_t);
+
+		// Allocate a lower replacement map without updating the old map
+		int update_skip = ct->map_update_skip;
+		ct->map_update_skip = 1;
+		ct->map_resizing = 1;
+		void *map_ptr = cita_malloc(new_size);
+		CITA_INDEX_TYPE map_index = ct->last_malloc_index;
+		ct->map_resizing = 0;
+		ct->map_update_skip = update_skip;
+
+		if (map_ptr == NULL)
+		{
+			CITA_REPORT("cita_shrink_map(): failed to move map from %zd to %zd cells. Input info says \"%s\"", old_count, new_count, cita_input_info);
+			break;
+		}
+		if (map_index == NAI || map_index >= ct->elem_count || ct->elem[map_index].addr >= old_map_addr)
+		{
+			if (map_index != NAI && map_index < ct->elem_count)
+				cita_free_core(map_ptr, 0, map_index);
+			break;
+		}
+
+		// Copy the retained map contents into the replacement allocation
+		size_t copy_count = new_count < old_count ? new_count : old_count;
+		memcpy(map_ptr, CITA_PTR(old_map_addr), copy_count * sizeof(cita_map_cell_t));
+
+		// Move element 2 into the replacement allocation's linked-list position
+		cita_elem_t *map_el = &ct->elem[2];
+		cita_elem_t *new_el = &ct->elem[map_index];
+		CITA_INDEX_TYPE target_prev_index = new_el->prev_index;
+		CITA_INDEX_TYPE target_next_index = new_el->next_index == 2 ? map_el->next_index : new_el->next_index;
+		CITA_ADDR_TYPE new_map_addr = new_el->addr;
+
+		#ifdef CITA_GAP_LINKS
+		cita_gap_unlink(2);
+		cita_gap_unlink(map_index);
+		#endif
+
+		ct->elem[new_el->prev_index].next_index = new_el->next_index;
+		ct->elem[new_el->next_index].prev_index = new_el->prev_index;
+		ct->elem[map_el->prev_index].next_index = map_el->next_index;
+		ct->elem[map_el->next_index].prev_index = map_el->prev_index;
+
+		map_el->prev_index = target_prev_index;
+		map_el->next_index = target_next_index;
+		map_el->addr = new_map_addr;
+		map_el->addr_end = new_map_addr + new_size;
+		ct->elem[target_prev_index].next_index = 2;
+		ct->elem[target_next_index].prev_index = 2;
+
+		new_el->addr = new_el->addr_end = 0;
+		new_el->next_index = NAI;
+		new_el->prev_index = ct->available_index;
+		#ifdef CITA_GAP_LINKS
+		cita_gap_init_elem(map_index);
+		cita_gap_refresh(target_prev_index);
+		cita_gap_refresh(2);
+		cita_gap_refresh(old_map_prev_index);
+		#endif
+		ct->available_index = map_index;
+
+		// Rebuild the retained cells around the old and new map positions
+		ct->map_count = new_count;
+		if (!ct->map_update_skip)
+		{
+			size_t im0 = 1, im1 = 0;
+			if (old_table_prev_index != ct->elem[1].prev_index || old_table_addr != ct->elem[1].addr || old_table_addr_end != ct->elem[1].addr_end)
+				cita_map_include_moved_elem(&im0, &im1, 1, old_table_prev_index, old_table_addr, old_table_addr_end);
+			cita_map_include_moved_elem(&im0, &im1, 2, old_map_prev_index, old_map_addr, old_map_addr_end);
+
+			if (im0 < ct->map_count)
+			{
+				if (im1 >= ct->map_count)
+					im1 = ct->map_count - 1;
+
+				int resizing = ct->map_resizing;
+				ct->map_resizing = 1;
+				cita_map_rebuild_range(im0, im1);
+				ct->map_resizing = resizing;
+			}
+		}
+
+		// Try again if shrinking the map moved the end of used memory lower
+		CITA_ADDR_TYPE new_mem_end = cita_find_end_addr();
+		if (new_mem_end >= mem_end)
+			break;
+		mem_end = new_mem_end;
+	}
+
+	return cita_find_end_addr();
+}
+
 void cita_map_elem_cells(CITA_INDEX_TYPE index, size_t *im0, size_t *im1)
 {
 	cita_elem_t *el = &ct->elem[index];
@@ -867,6 +1048,20 @@ void cita_map_update_range(CITA_INDEX_TYPE index)
 
 	cita_map_rebuild_range(im0, im1);
 }
+#else
+CITA_ADDR_TYPE cita_shrink_end_addr()
+{
+	// Return the current end when there is no map to shrink
+	if (ct == NULL)
+		return CITA_MEM_START;
+	return cita_find_end_addr();
+}
+
+CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
+{
+	// Keep the requested end when there is no map to shrink
+	return mem_end;
+}
 #endif
 
 int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
@@ -973,6 +1168,19 @@ void cita_enlarge_memory(CITA_ADDR_TYPE req)
 	#endif
 }
 
+void cita_shrink_memory()
+{
+	#ifdef CITA_MEM_SHRINK
+	// Avoid recursive shrink attempts while shrinking the map
+	if (ct == NULL || ct->shrink_in_progress)
+		return;
+
+	ct->shrink_in_progress = 1;
+	CITA_MEM_SHRINK()
+	ct->shrink_in_progress = 0;
+	#endif
+}
+
 #ifdef CITA_ALWAYS_CHECK_LINKS
 int cita_check_links(const char *func, int line)
 {
@@ -1059,6 +1267,7 @@ void cita_table_init()
 	ct->event_counter = -1;
 	ct->last_malloc_index = NAI;
 	ct->map_update_skip = 1;
+	ct->shrink_in_progress = 0;
 	#ifdef CITA_MAP_SCALE
 	ct->map_count = 0;
 	ct->map_ready = 0;
@@ -1256,6 +1465,8 @@ void cita_free_core(void *ptr, int allow_memset, int32_t index)
 void cita_free(void *ptr)
 {
 	cita_free_core(ptr, 1, NAI);
+	if (ptr != NULL)
+		cita_shrink_memory();
 }
 
 void *cita_malloc(size_t size)
@@ -1573,6 +1784,8 @@ void *cita_realloc(void *ptr, size_t size)
 	}
 
 	cita_check_links_internal(__func__, __LINE__);
+	cita_shrink_memory();
+	el = &ct->elem[index];
 	return CITA_PTR(el->addr);
 }
 
