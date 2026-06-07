@@ -164,11 +164,14 @@ static void cita_win_init()
 		uintptr_t base_addr, round_addr;
 		cita_buffer.mem_max = windows_memory_max_usable_block(&base_addr);
 
+		// Find the highest set bit in the base address
+		uintptr_t top_bit = (uintptr_t) 1 << (sizeof(uintptr_t) * 8 - 1);
+		while (top_bit && (base_addr & top_bit) == 0)
+			top_bit >>= 1;
+
 		// Round up the base address
-		round_addr = base_addr;
-		for (int i=1; i < 64; i<<=1)
-			round_addr |= round_addr >> i;
-		round_addr++;
+		uintptr_t round_unit = top_bit >> 4;
+		round_addr = (base_addr + round_unit - 1) & ~(round_unit - 1);
 		cita_buffer.mem_max -= round_addr - base_addr;
 
 		// Limit the size
