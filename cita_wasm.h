@@ -70,15 +70,8 @@
 static void cita_wasm_mem_shrink(void)
 {
 	// Check whether enough WebAssembly memory can be recovered
-	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
-	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 64 << 10))
-		return;
-
-	// Shrink the map before reporting the final aligned memory size
-	used_end = cita_shrink_map(used_end);
-	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 64 << 10))
+	CITA_ADDR_TYPE new_end = cita_shrink_new_end((CITA_ADDR_TYPE) 64 << 10, 16);
+	if (new_end == CITA_MEM_END)
 		return;
 
 	// Report the shrink opportunity to the host

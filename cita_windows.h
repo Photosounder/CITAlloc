@@ -12,10 +12,12 @@
 
   #include "cit_alloc.h"
 
-  #if UINTPTR_MAX == 0xFFFFFFFFUL
-    #define CITA_WIN_MAX UINTPTR_MAX
-  #else
-    #define CITA_WIN_MAX ((CITA_ADDR_TYPE) 1 << 40)
+  #ifndef CITA_WIN_MAX
+    #if UINTPTR_MAX == 0xFFFFFFFFUL
+      #define CITA_WIN_MAX UINTPTR_MAX
+    #else
+      #define CITA_WIN_MAX ((CITA_ADDR_TYPE) 1 << 40)
+    #endif
   #endif
 
   #define CITA_TIME_IS_COUNTER
@@ -139,8 +141,7 @@ size_t windows_memory_max_usable_block(uintptr_t *base_addr)
 				if (usable_size > max_usable_block)
 				{
 					max_usable_block = usable_size;
-					if (base_addr)
-						*base_addr = aligned_start;
+					*base_addr = aligned_start;
 				}
 			}
 		}
@@ -161,17 +162,19 @@ static void cita_win_init()
 		InitializeCriticalSection(&cita_mutex);
 
 		// Reserve virtual memory
-		uintptr_t base_addr, round_addr;
+		uintptr_t base_addr;
 		cita_buffer.mem_max = windows_memory_max_usable_block(&base_addr);
 
-		// Find the highest set bit in the base address
-		uintptr_t top_bit = (uintptr_t) 1 << (sizeof(uintptr_t) * 8 - 1);
-		while (top_bit && (base_addr & top_bit) == 0)
-			top_bit >>= 1;
+		// Round up the address to only have 2 hex digits
+		int sh = sizeof(uintptr_t) * 8 - 1;
 
-		// Round up the base address
-		uintptr_t round_unit = top_bit >> 4;
-		round_addr = (base_addr + round_unit - 1) & ~(round_unit - 1);
+		while (base_addr >> sh == 0)
+			sh--;
+
+		sh = (sh & ~3) - 4;	// the -4 makes room for another hex digit
+		uintptr_t r = ((uintptr_t) 1 << sh) - 1;
+		uintptr_t round_addr = (base_addr + r) & ~r;
+
 		cita_buffer.mem_max -= round_addr - base_addr;
 
 		// Limit the size
@@ -229,15 +232,8 @@ static void cita_win_mem_shrink(void);
 static void cita_win_mem_shrink(void)
 {
 	// Check whether enough committed memory can be recovered
-	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
-	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<12)-1) & ~(((CITA_ADDR_TYPE) 1<<12)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 32 << 20))
-		return;
-
-	// Shrink the map before deciding the final committed end
-	used_end = cita_shrink_map(used_end);
-	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<12)-1) & ~(((CITA_ADDR_TYPE) 1<<12)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 32 << 20))
+	CITA_ADDR_TYPE new_end = cita_shrink_new_end((CITA_ADDR_TYPE) 32 << 20, 12);
+	if (new_end == CITA_MEM_END)
 		return;
 
 	// Decommit the recovered tail while keeping the address range reserved
@@ -245,9 +241,7 @@ static void cita_win_mem_shrink(void)
 	if (VirtualFree((void *) new_end, old_end - new_end, 0x00004000 /*MEM_DECOMMIT*/))
 	{
 		CITA_MEM_END = new_end;
-		#ifdef CITA_MAP_SCALE
 		cita_map_ensure_capacity();
-		#endif
 	}
 	else
 		CITA_REPORT("cita_win_mem_shrink(): failed to decommit memory from %zd to %zd MB. Error: %lu\n", (new_end-CITA_MEM_START)>>20, (old_end-CITA_MEM_START)>>20, GetLastError());

@@ -88,15 +88,8 @@
 static void cita_arena_mem_shrink(void)
 {
 	// Check whether enough arena memory can be recovered
-	CITA_ADDR_TYPE used_end = cita_shrink_end_addr();
-	CITA_ADDR_TYPE new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 256 << 10))
-		return;
-
-	// Shrink the map before deciding the final arena size
-	used_end = cita_shrink_map(used_end);
-	new_end = (used_end + ((CITA_ADDR_TYPE) 1<<16)-1) & ~(((CITA_ADDR_TYPE) 1<<16)-1);
-	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < ((CITA_ADDR_TYPE) 256 << 10))
+	CITA_ADDR_TYPE new_end = cita_shrink_new_end((CITA_ADDR_TYPE) 256 << 10, 16);
+	if (new_end == CITA_MEM_END)
 		return;
 
 	// Reallocate the arena and restore pointers that depend on its base
@@ -108,9 +101,7 @@ static void cita_arena_mem_shrink(void)
 		cita_arena_global->mem_as = new_end;
 		ct = (cita_table_t *) cita_arena_global->mem;
 		ct->elem = CITA_PTR(elem_addr);
-		#ifdef CITA_MAP_SCALE
 		cita_map_ensure_capacity();
-		#endif
 	}
 	else
 	{

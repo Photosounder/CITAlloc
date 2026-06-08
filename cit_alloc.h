@@ -122,7 +122,6 @@ extern void *cita_realloc(void *ptr, size_t size);
 
 extern int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only);
 extern CITA_ADDR_TYPE cita_find_end_addr();
-extern CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end);
 
 CITA_TLS extern char *cita_input_info;
 
@@ -216,14 +215,9 @@ void cita_inc_event_counter()
 	#endif
 }
 
-CITA_ADDR_TYPE cita_align_down(CITA_ADDR_TYPE addr)
-{
-	return addr & ~(CITA_ALIGN-1);
-}
-
 CITA_ADDR_TYPE cita_align_up(CITA_ADDR_TYPE addr)
 {
-	return cita_align_down(addr+CITA_ALIGN-1 + CITA_PADDING);
+	return (addr+CITA_ALIGN-1 + CITA_PADDING) & ~(CITA_ALIGN-1);
 }
 
 int cita_free_space_after(CITA_INDEX_TYPE index, CITA_ADDR_TYPE *addr, CITA_ADDR_TYPE *addr_end)
@@ -272,13 +266,6 @@ void cita_gap_init_elem(CITA_INDEX_TYPE index)
 	// Clear gap-owner hints for an unavailable element
 	ct->elem[index].prev_gap_index = NAI;
 	ct->elem[index].next_gap_index = NAI;
-}
-
-int cita_gap_owns_space(CITA_INDEX_TYPE index)
-{
-	// Check whether an element owns a reusable free space
-	CITA_ADDR_TYPE addr, addr_end;
-	return cita_free_space_after(index, &addr, &addr_end);
 }
 
 int cita_gap_is_boundary(CITA_INDEX_TYPE index)
@@ -338,12 +325,6 @@ void cita_gap_rebuild_span(CITA_INDEX_TYPE start, CITA_INDEX_TYPE end)
 		if (index == end)
 			break;
 	}
-}
-
-void cita_gap_unlink(CITA_INDEX_TYPE index)
-{
-	// Clear gap-owner hints before making an element unavailable
-	cita_gap_init_elem(index);
 }
 
 void cita_gap_refresh(CITA_INDEX_TYPE index)
@@ -428,13 +409,6 @@ void cita_map_init_cells(cita_map_cell_t *map, size_t im0, size_t im1)
 void cita_map_addr_cells(CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_end, size_t *im0, size_t *im1)
 {
 	// Convert an address range to map cells
-	if (addr_end <= addr)
-	{
-		*im0 = 1;
-		*im1 = 0;
-		return;
-	}
-
 	if (addr < CITA_MEM_START)
 		addr = CITA_MEM_START;
 	if (addr_end > CITA_MEM_END)
@@ -484,17 +458,11 @@ void cita_map_include_elem(size_t *im0, size_t *im1, CITA_INDEX_TYPE index)
 	cita_map_include_range(im0, im1, r0, r1);
 }
 
-int cita_map_free_space_after(CITA_INDEX_TYPE index, CITA_ADDR_TYPE *addr, CITA_ADDR_TYPE *addr_end)
-{
-	// Find the reusable free space after an element
-	return cita_free_space_after(index, addr, addr_end);
-}
-
 void cita_map_include_free_space_after(size_t *im0, size_t *im1, CITA_INDEX_TYPE index)
 {
 	// Add the free space after an element to an existing rebuild range
 	CITA_ADDR_TYPE addr, addr_end;
-	if (cita_map_free_space_after(index, &addr, &addr_end))
+	if (cita_free_space_after(index, &addr, &addr_end))
 		cita_map_include_addr_range(im0, im1, addr, addr_end);
 }
 
@@ -523,14 +491,7 @@ void cita_map_ensure_capacity()
 		}
 
 		size_t old_count = ct->map_count;
-		size_t new_count = old_count;
-		if (new_count == 0)
-			new_count = CITA_MAP_COUNT_MIN;
-		else if (new_count > max_count / 2)
-			new_count = max_count;
-		else
-			new_count *= 2;
-
+		size_t new_count = old_count ? old_count : CITA_MAP_COUNT_MIN;
 		while (new_count < CITA_MAP_COUNT_MIN)
 		{
 			if (new_count > max_count / 2)
@@ -551,11 +512,11 @@ void cita_map_ensure_capacity()
 		int update_skip = ct->map_update_skip;
 		ct->map_update_skip = 1;
 		ct->map_resizing = 1;
-		void *map_ptr = cita_realloc(CITA_PTR(ct->elem[2].addr), new_count * sizeof(cita_map_cell_t));
+		void *ptr = cita_realloc(CITA_PTR(ct->elem[2].addr), new_count * sizeof(cita_map_cell_t));
 		ct->map_resizing = 0;
 		ct->map_update_skip = update_skip;
 
-		if (map_ptr == NULL)
+		if (ptr == NULL)
 		{
 			CITA_REPORT("cita_map_ensure_capacity(): failed to enlarge map from %zd to %zd cells. Input info says \"%s\"", old_count, new_count, cita_input_info);
 			return;
@@ -585,60 +546,32 @@ size_t cita_map_count_for_mem_end(CITA_ADDR_TYPE mem_end)
 	return (size_t) ((mem_end - CITA_MEM_START + CITA_MAP_CELL_SIZE-1) >> CITA_MAP_SCALE);
 }
 
-CITA_ADDR_TYPE cita_find_end_addr_except(CITA_INDEX_TYPE except_index)
+CITA_ADDR_TYPE cita_find_payload_end_addr()
 {
-	// Find the highest used address while ignoring one element
-	CITA_ADDR_TYPE end_addr = CITA_MEM_START;
-	for (CITA_INDEX_TYPE index = 0; ; index = ct->elem[index].next_index)
-	{
-		if (index != except_index && ct->elem[index].addr_end > end_addr)
-			end_addr = ct->elem[index].addr_end;
-		if (ct->elem[index].next_index == 0)
-			break;
-	}
-
-	return end_addr;
+	// Find the highest used address while ignoring the map
+	CITA_INDEX_TYPE index = ct->elem[0].prev_index;
+	if (index == 2)
+		index = ct->elem[2].prev_index;
+	return ct->elem[index].addr_end;
 }
 
 size_t cita_map_count_for_payload_end(CITA_ADDR_TYPE payload_end)
 {
 	// Compute the map size needed if the map is placed after this payload
-	CITA_ADDR_TYPE mem_end = payload_end;
+	size_t count = cita_map_count_for_mem_end(payload_end);
 	for (;;)
 	{
-		size_t count = cita_map_count_for_mem_end(mem_end);
 		CITA_ADDR_TYPE map_end = cita_align_up(payload_end) + (CITA_ADDR_TYPE) count * sizeof(cita_map_cell_t);
-		CITA_ADDR_TYPE next_mem_end = map_end > payload_end ? map_end : payload_end;
-		size_t next_count = cita_map_count_for_mem_end(next_mem_end);
+		size_t next_count = cita_map_count_for_mem_end(map_end);
 		if (next_count == count)
 			return count;
-		mem_end = next_mem_end;
+		count = next_count;
 	}
-}
-
-CITA_ADDR_TYPE cita_map_end_for_payload_end(CITA_ADDR_TYPE payload_end)
-{
-	// Compute the used end if the map is stored after this payload
-	size_t count = cita_map_count_for_payload_end(payload_end);
-	CITA_ADDR_TYPE map_end = cita_align_up(payload_end) + (CITA_ADDR_TYPE) count * sizeof(cita_map_cell_t);
-	return map_end > payload_end ? map_end : payload_end;
-}
-
-CITA_ADDR_TYPE cita_shrink_end_addr()
-{
-	// Estimate the highest used address after a possible map shrink
-	if (ct == NULL)
-		return CITA_MEM_START;
-	CITA_ADDR_TYPE end_addr = cita_find_end_addr();
-	if (!ct->map_ready || ct->map_resizing || ct->elem[0].prev_index != 2)
-		return end_addr;
-
-	return cita_map_end_for_payload_end(cita_find_end_addr_except(2));
 }
 
 CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 {
-	if (ct == NULL || !ct->map_ready || ct->map_resizing)
+	if (!ct->map_ready || ct->map_resizing)
 		return mem_end;
 	if (ct->elem[0].prev_index != 2 && cita_map_count_for_mem_end(mem_end) >= ct->map_count)
 		return cita_find_end_addr();
@@ -646,7 +579,7 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 	for (;;)
 	{
 		// Stop if the current map is already compact enough
-		CITA_ADDR_TYPE payload_end = cita_find_end_addr_except(2);
+		CITA_ADDR_TYPE payload_end = cita_find_payload_end_addr();
 		if (payload_end < mem_end)
 			mem_end = payload_end;
 		size_t new_count = cita_map_count_for_payload_end(mem_end);
@@ -677,10 +610,9 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 			CITA_REPORT("cita_shrink_map(): failed to move map from %zd to %zd cells. Input info says \"%s\"", old_count, new_count, cita_input_info);
 			break;
 		}
-		if (map_index == NAI || map_index >= ct->elem_count || ct->elem[map_index].addr >= old_map_addr)
+		if (ct->elem[map_index].addr >= old_map_addr)
 		{
-			if (map_index != NAI && map_index < ct->elem_count)
-				cita_free_core(map_ptr, 0, map_index);
+			cita_free_core(map_ptr, 0, map_index);
 			break;
 		}
 
@@ -694,11 +626,6 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 		CITA_INDEX_TYPE target_prev_index = new_el->prev_index;
 		CITA_INDEX_TYPE target_next_index = new_el->next_index == 2 ? map_el->next_index : new_el->next_index;
 		CITA_ADDR_TYPE new_map_addr = new_el->addr;
-
-		#ifdef CITA_GAP_LINKS
-		cita_gap_unlink(2);
-		cita_gap_unlink(map_index);
-		#endif
 
 		ct->elem[new_el->prev_index].next_index = new_el->next_index;
 		ct->elem[new_el->next_index].prev_index = new_el->prev_index;
@@ -737,10 +664,9 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 				if (im1 >= ct->map_count)
 					im1 = ct->map_count - 1;
 
-				int resizing = ct->map_resizing;
 				ct->map_resizing = 1;
 				cita_map_rebuild_range(im0, im1);
-				ct->map_resizing = resizing;
+				ct->map_resizing = 0;
 			}
 		}
 
@@ -754,26 +680,14 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 	return cita_find_end_addr();
 }
 
-void cita_map_elem_cells(CITA_INDEX_TYPE index, size_t *im0, size_t *im1)
-{
-	cita_elem_t *el = &ct->elem[index];
-	cita_map_addr_cells(el->addr, el->addr_end, im0, im1);
-}
-
 void cita_map_set_elem_range(CITA_INDEX_TYPE index)
 {
+	// Convert the element address range to map cells
 	size_t im0, im1;
-	cita_map_elem_cells(index, &im0, &im1);
-	if (im0 <= im1)
-	{
-		ct->elem[index].map_start = (CITA_MAPINDEX_TYPE) im0;
-		ct->elem[index].map_end = (CITA_MAPINDEX_TYPE) im1;
-	}
-	else
-	{
-		ct->elem[index].map_start = CITA_MAP_INDEX_NAI;
-		ct->elem[index].map_end = 0;
-	}
+	cita_elem_t *el = &ct->elem[index];
+	cita_map_addr_cells(el->addr, el->addr_end, &im0, &im1);
+	ct->elem[index].map_start = (CITA_MAPINDEX_TYPE) im0;
+	ct->elem[index].map_end = (CITA_MAPINDEX_TYPE) im1;
 }
 
 int cita_map_index_is_live(CITA_INDEX_TYPE index)
@@ -821,14 +735,6 @@ CITA_INDEX_TYPE cita_map_find_rebuild_start(cita_map_cell_t *map, size_t im0, si
 	return index;
 }
 
-CITA_INDEX_TYPE cita_map_find_gap_start(CITA_INDEX_TYPE index)
-{
-	// Start with the gap before the first rebuilt allocation
-	if (index == NAI)
-		return 0;
-	return index ? ct->elem[index].prev_index : 0;
-}
-
 CITA_INDEX_TYPE cita_map_next_cell_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE cell_start)
 {
 	// Move forwards to the first element that may overlap the cell
@@ -874,25 +780,6 @@ CITA_INDEX_TYPE cita_map_next_gap_index(CITA_INDEX_TYPE index, CITA_ADDR_TYPE ce
 	return index;
 }
 
-void cita_map_store_free_space(cita_map_cell_t *map, size_t im0, size_t im1, CITA_ADDR_TYPE addr, CITA_ADDR_TYPE addr_end)
-{
-	// Find the rebuilt cells overlapped by this reusable free space
-	size_t gap_im0, gap_im1;
-	cita_map_addr_cells(addr, addr_end, &gap_im0, &gap_im1);
-	if (gap_im0 < im0)
-		gap_im0 = im0;
-	if (gap_im1 > im1)
-		gap_im1 = im1;
-	if (gap_im0 > gap_im1)
-		return;
-
-	// Store the free-space size in every overlapped rebuilt cell
-	CITA_MAPSIZE_TYPE value = cita_map_space_value(addr_end - addr);
-	for (size_t im = gap_im0; im <= gap_im1; im++)
-		if (value > map[im].free_space)
-			map[im].free_space = value;
-}
-
 void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, CITA_INDEX_TYPE gap_index, CITA_ADDR_TYPE rebuild_start, CITA_ADDR_TYPE rebuild_end)
 {
 	// Walk each linked gap once to rebuild free-space values
@@ -913,7 +800,21 @@ void cita_map_rebuild_free_spaces(cita_map_cell_t *map, size_t im0, size_t im1, 
 			if (addr >= rebuild_end)
 				break;
 			if (addr_end > rebuild_start)
-				cita_map_store_free_space(map, im0, im1, addr, addr_end);
+			{
+				// Find the rebuilt cells overlapped by this reusable free space
+				size_t gap_im0, gap_im1;
+				cita_map_addr_cells(addr, addr_end, &gap_im0, &gap_im1);
+				if (gap_im0 < im0)
+					gap_im0 = im0;
+				if (gap_im1 > im1)
+					gap_im1 = im1;
+
+				// Store the free-space size in every overlapped rebuilt cell
+				CITA_MAPSIZE_TYPE value = cita_map_space_value(addr_end - addr);
+				for (size_t im = gap_im0; im <= gap_im1; im++)
+					if (value > map[im].free_space)
+						map[im].free_space = value;
+			}
 			if (addr_end >= rebuild_end)
 				break;
 		}
@@ -951,7 +852,9 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 
 			// Check the linked free spaces around the promising cell
 			CITA_INDEX_TYPE index = cita_map_find_rebuild_start(map, im, im, cell_start);
-			CITA_INDEX_TYPE gap_index = cita_map_next_gap_index(cita_map_find_gap_start(index), cell_start);
+			// Start with the gap before the first allocation that may overlap this cell
+			CITA_INDEX_TYPE gap_index = index && index != NAI ? ct->elem[index].prev_index : 0;
+			gap_index = cita_map_next_gap_index(gap_index, cell_start);
 			while (gap_index != NAI)
 			{
 				CITA_ADDR_TYPE addr, addr_end;
@@ -959,7 +862,7 @@ CITA_INDEX_TYPE cita_map_find_free_space(CITA_ADDR_TYPE required_space)
 				{
 					if (addr >= cell_end)
 						break;
-					if (cell_start < addr_end && addr_end - addr >= required_space)
+					if (addr_end - addr >= required_space)
 						return gap_index;
 				}
 
@@ -984,20 +887,16 @@ void cita_map_rebuild_range(size_t im0, size_t im1)
 	// Ensure the map is large enough for the current heap
 	cita_map_ensure_capacity();
 
-	// Validate the requested cell range
-	if (im0 > im1 || ct->map_count == 0)
+	// Skip empty rebuild ranges
+	if (im0 > im1)
 		return;
-	if (im1 >= ct->map_count)
-	{
-		CITA_REPORT("cita_map_rebuild_range(%zd, %zd): map cell %zd is outside of the %zd allocated cells. Input info says \"%s\"", im0, im1, im1, ct->map_count, cita_input_info);
-		im1 = ct->map_count - 1;
-	}
 
 	// Find the first linked element that may overlap the rebuilt range
 	cita_map_cell_t *map = CITA_PTR(ct->elem[2].addr);
 	CITA_ADDR_TYPE rebuild_start = CITA_MEM_START + ((CITA_ADDR_TYPE) im0 << CITA_MAP_SCALE);
 	CITA_INDEX_TYPE index = cita_map_find_rebuild_start(map, im0, im1, rebuild_start);
-	CITA_INDEX_TYPE gap_index = cita_map_find_gap_start(index);
+	// Start with the gap before the first rebuilt allocation
+	CITA_INDEX_TYPE gap_index = index && index != NAI ? ct->elem[index].prev_index : 0;
 	CITA_ADDR_TYPE rebuild_last_start, rebuild_end;
 	cita_map_cell_range(im1, &rebuild_last_start, &rebuild_end);
 
@@ -1048,21 +947,39 @@ void cita_map_update_range(CITA_INDEX_TYPE index)
 
 	cita_map_rebuild_range(im0, im1);
 }
-#else
-CITA_ADDR_TYPE cita_shrink_end_addr()
-{
-	// Return the current end when there is no map to shrink
-	if (ct == NULL)
-		return CITA_MEM_START;
-	return cita_find_end_addr();
-}
-
-CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
-{
-	// Keep the requested end when there is no map to shrink
-	return mem_end;
-}
 #endif
+
+CITA_ADDR_TYPE cita_shrink_new_end(CITA_ADDR_TYPE recover_min, int align_bits)
+{
+	// Check whether enough memory can be recovered before moving the map
+	CITA_ADDR_TYPE align_mask = ((CITA_ADDR_TYPE) 1 << align_bits) - 1;
+	#ifdef CITA_MAP_SCALE
+	// Estimate the highest used address after a possible map shrink
+	CITA_INDEX_TYPE last_index = ct->elem[0].prev_index;
+	CITA_ADDR_TYPE used_end = ct->elem[last_index].addr_end;
+	if (ct->map_ready && !ct->map_resizing && last_index == 2)
+	{
+		// Compute the used end if the map is stored after the payload
+		CITA_ADDR_TYPE payload_end = cita_find_payload_end_addr();
+		used_end = cita_align_up(payload_end) + (CITA_ADDR_TYPE) cita_map_count_for_payload_end(payload_end) * sizeof(cita_map_cell_t);
+	}
+	#else
+	CITA_ADDR_TYPE used_end = cita_find_end_addr();
+	#endif
+	CITA_ADDR_TYPE new_end = (used_end + align_mask) & ~align_mask;
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < recover_min)
+		return CITA_MEM_END;
+
+	#ifdef CITA_MAP_SCALE
+	// Shrink the map before deciding the final memory end
+	used_end = cita_shrink_map(used_end);
+	new_end = (used_end + align_mask) & ~align_mask;
+	if (CITA_MEM_END <= new_end || CITA_MEM_END - new_end < recover_min)
+		return CITA_MEM_END;
+	#endif
+
+	return new_end;
+}
 
 int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
 {
@@ -1406,7 +1323,6 @@ void cita_free_core(void *ptr, int allow_memset, int32_t index)
 	// If the buffer wasn't found there's something wrong
 	if (index == NAI)
 	{
-		index = cita_table_find_buffer(addr, 1);	// added for debugging convenience
 		CITA_REPORT("cita_free(%#zx): buffer not found. Input info says \"%s\"", (uintptr_t) addr, cita_input_info);
 		return;
 	}
@@ -1434,7 +1350,6 @@ void cita_free_core(void *ptr, int allow_memset, int32_t index)
 	#endif
 	#ifdef CITA_GAP_LINKS
 	CITA_INDEX_TYPE gap_prev_index = el->prev_index;
-	cita_gap_unlink(index);
 	#endif
 	ct->elem[el->prev_index].next_index = el->next_index;
 	ct->elem[el->next_index].prev_index = el->prev_index;
@@ -1606,8 +1521,7 @@ void *cita_malloc(size_t size)
 	#ifdef CITA_MAP_SCALE
 	ct->elem[index].map_start = CITA_MAP_INDEX_NAI;
 	ct->elem[index].map_end = 0;
-	if (ct->elem_count > 3)
-		cita_map_update_range(index);
+	cita_map_update_range(index);
 	el = &ct->elem[index];
 	#endif
 
@@ -1736,7 +1650,6 @@ void *cita_realloc(void *ptr, size_t size)
 		#endif
 		#ifdef CITA_GAP_LINKS
 		CITA_INDEX_TYPE gap_old_prev_index = el->prev_index;
-		cita_gap_unlink(index);
 		#endif
 		ct->elem[el->prev_index].next_index = el->next_index;
 		ct->elem[el->next_index].prev_index = el->prev_index;

@@ -63,7 +63,7 @@ static int test_validate_map(const char *label)
 		do
 		{
 			CITA_ADDR_TYPE addr, addr_end;
-			if (cita_map_free_space_after(ii, &addr, &addr_end) && addr < cell_end && cell_start < addr_end)
+			if (cita_free_space_after(ii, &addr, &addr_end) && addr < cell_end && cell_start < addr_end)
 			{
 				CITA_MAPSIZE_TYPE space = cita_map_space_value(addr_end - addr);
 				if (space > expected_space)
