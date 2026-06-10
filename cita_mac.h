@@ -116,14 +116,6 @@
     #endif
   #endif
 
-  #ifndef CITA_MAC_MAP_ANON
-    #ifdef MAP_ANON
-      #define CITA_MAC_MAP_ANON MAP_ANON
-    #else
-      #define CITA_MAC_MAP_ANON MAP_ANONYMOUS
-    #endif
-  #endif
-
   static pthread_mutex_t cita_mutex = PTHREAD_MUTEX_INITIALIZER;
   static pthread_once_t cita_init_once = PTHREAD_ONCE_INIT;
   static size_t cita_mac_page_size = 4096;
@@ -191,7 +183,7 @@ static void cita_mac_init(void)
 	size_t min_reserve_size = reserve_size < ((size_t) 64 << 20) ? reserve_size : ((size_t) 64 << 20);
 	while (reserve_size >= min_reserve_size && reserve_size > 0)
 	{
-		void *mem = mmap(NULL, reserve_size, PROT_NONE, MAP_PRIVATE | CITA_MAC_MAP_ANON, -1, 0);
+		void *mem = mmap(NULL, reserve_size, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
 		if (mem != MAP_FAILED)
 		{
 			cita_buffer.mem = mem;
@@ -248,7 +240,7 @@ static void cita_mac_mem_shrink(void);
 static int cita_mac_decommit(void *addr, size_t size)
 {
 	// Replace committed pages with a fresh no-access mapping.
-	void *ret = mmap(addr, size, PROT_NONE, MAP_PRIVATE | CITA_MAC_MAP_ANON | MAP_FIXED, -1, 0);
+	void *ret = mmap(addr, size, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
 	return ret == addr;
 }
 
