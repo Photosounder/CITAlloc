@@ -44,8 +44,6 @@
   #undef alloc_enough
   #define alloc_enough(b, nc, acp, se, ir)	*(acp) = cita_win_alloc_enough_pattern(b, nc, *(acp), se, ir, 0, __FILE_NAME__, __func__, __LINE__)
 
-  extern size_t cita_win_get_min_size();
-
   extern const char *cita_get_filename(const char *path);
   extern char input_info[60];
   #define ADD_CITA_INFO \
@@ -271,6 +269,7 @@ void *cita_win_malloc(size_t size, const char *filename, const char *func, int l
 void cita_win_free(void *ptr, const char *filename, const char *func, int line)
 {
 	CITA_LOCK
+	ADD_CITA_INFO
 	cita_free(ptr);
 	CITA_UNLOCK
 }

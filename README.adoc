@@ -107,6 +107,10 @@ CITA buffer at 0x20000000000, buffer size 1073745920, malloc returned 0x20000000
 CITA buffer at 0x20000000000, buffer size 1073745920, malloc returned 0x200400005e0 (offset 0x400005e0)
 ```
 
+=== cita_mac.h
+
+Similar to cita_windows.h. Base addresses aren't rounded up.
+
 == Threading
 
 There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the platform implementation file. It might look something like this:
