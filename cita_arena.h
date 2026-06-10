@@ -13,6 +13,10 @@
     #define CITA_ADDR_TYPE uint32_t
   #endif
 
+  #ifndef CITA_INDEX_TYPE
+    #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
+  #endif
+
   #include "cit_alloc.h"
 
   typedef struct
@@ -52,9 +56,6 @@
 
   CITA_TLS cita_arena_t *cita_arena_global = NULL;
 
-  #ifndef CITA_INDEX_TYPE
-    #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
-  #endif
   #define CITA_ALIGN 16			// all allocations will be aligned to 16 bytes
   #define CITA_MAP_SCALE 13		// means a map cell covers 8 kB
   #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat

@@ -16,6 +16,10 @@
   #ifndef H_CITA_WASM
   #define H_CITA_WASM
   
+    #ifndef CITA_INDEX_TYPE
+      #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
+    #endif
+
     #include "cit_alloc.h"
     #define __wasilibc___functions_malloc_h
     extern void *cita_wasm_malloc(size_t size, const char *filename, const char *func, int line);
@@ -43,9 +47,6 @@
 // Core implementation
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
-    #ifndef CITA_INDEX_TYPE
-      #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
-    #endif
     #define CITA_ALIGN 16		// all allocations will be aligned to 16 bytes
     #define CITA_MAP_SCALE 14		// means a map cell covers 16 kB
     #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat

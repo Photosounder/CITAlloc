@@ -31,6 +31,10 @@
     #define CITA_ADDR_TYPE uintptr_t
   #endif
 
+  #ifndef CITA_INDEX_TYPE
+    #define CITA_INDEX_TYPE uint32_t	// means there can be 2^32-4 allocations
+  #endif
+
   #ifndef __FILE_NAME__
     #define __FILE_NAME__ __FILE__
   #endif
@@ -88,9 +92,6 @@
 
   cita_buffer_t cita_buffer = {0};
 
-  #ifndef CITA_INDEX_TYPE
-    #define CITA_INDEX_TYPE uint32_t	// means there can be 2^32-4 allocations
-  #endif
   #define CITA_ALIGN 16			// all allocations will be aligned to 16 bytes
   #define CITA_MAP_SCALE 16		// means a map cell covers 64 kB
   #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat

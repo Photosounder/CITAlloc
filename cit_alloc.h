@@ -104,6 +104,10 @@ extern void *cita_realloc(void *ptr, size_t size);
   #define CITA_ADDR_TYPE uintptr_t
 #endif
 
+#ifndef CITA_INDEX_TYPE
+  #define CITA_INDEX_TYPE uint32_t
+#endif
+
 #ifndef CITA_MAPINDEX_TYPE
   #define CITA_MAPINDEX_TYPE uint32_t
 #endif
@@ -120,7 +124,7 @@ extern void *cita_realloc(void *ptr, size_t size);
   #define CITA_TLS_HEAP
 #endif
 
-extern int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only);
+extern CITA_INDEX_TYPE cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only);
 extern CITA_ADDR_TYPE cita_find_end_addr();
 
 CITA_TLS extern char *cita_input_info;
@@ -190,11 +194,13 @@ typedef struct
 typedef struct
 {
 	char cita_signature[4];
-	int32_t version_offset, available_index;
+	int32_t version_offset;
+	CITA_INDEX_TYPE available_index;
 	volatile int32_t timestamp;	// meant to be updated by the host
 	cita_elem_t *elem;
 	size_t elem_count, elem_as;
-	int32_t event_counter, last_malloc_index;
+	int32_t event_counter;
+	CITA_INDEX_TYPE last_malloc_index;
 	int8_t map_update_skip, shrink_in_progress;
 	#ifdef CITA_MAP_SCALE
 	size_t map_count;
@@ -250,7 +256,7 @@ void cita_erase_to_mem_end(CITA_ADDR_TYPE start)
 	#endif
 }
 
-void cita_free_core(void *ptr, int allow_memset, int32_t index);
+void cita_free_core(void *ptr, int allow_memset, CITA_INDEX_TYPE index);
 
 #ifdef CITA_GAP_LINKS
 #ifndef CITA_GAP_LINK_SCALE
@@ -981,7 +987,7 @@ CITA_ADDR_TYPE cita_shrink_new_end(CITA_ADDR_TYPE recover_min, int align_bits)
 	return new_end;
 }
 
-int32_t cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
+CITA_INDEX_TYPE cita_table_find_buffer(CITA_ADDR_TYPE addr, const int start_only)
 {
 	CITA_INDEX_TYPE i = 0;
 
@@ -1101,7 +1107,7 @@ void cita_shrink_memory()
 #ifdef CITA_ALWAYS_CHECK_LINKS
 int cita_check_links(const char *func, int line)
 {
-	int32_t ir;
+	CITA_INDEX_TYPE ir;
 
 	// Go through each link to make sure they point to each other
 	for (ir=0; ir < ct->elem_count; ir++)
@@ -1162,8 +1168,11 @@ int cita_check_links_internal(const char *func, int line)
 {
 #ifdef CITA_ALWAYS_CHECK_LINKS
 	return cita_check_links(func, line);
-#endif
+#else
+	(void) func;
+	(void) line;
 	return 0;
+#endif
 }
 
 void cita_table_init()
@@ -1307,7 +1316,7 @@ void cita_table_init()
 	#endif
 }
 
-void cita_free_core(void *ptr, int allow_memset, int32_t index)
+void cita_free_core(void *ptr, int allow_memset, CITA_INDEX_TYPE index)
 {
 	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
@@ -1397,7 +1406,7 @@ void *cita_malloc(size_t size)
 		size = 1;
 	}
 
-	int32_t index = ct->available_index;
+	CITA_INDEX_TYPE index = ct->available_index;
 
 	// Get a table element
 	if (index == NAI)
@@ -1556,7 +1565,7 @@ void *cita_realloc(void *ptr, size_t size)
 	}
 
 	// Find the table index of the buffer to free
-	int32_t index = cita_table_find_buffer(addr, 1);
+	CITA_INDEX_TYPE index = cita_table_find_buffer(addr, 1);
 	if (index == NAI)
 	{
 		CITA_REPORT("cita_realloc(%#zx, %zd): buffer not found. Input info says \"%s\"", (uintptr_t) addr, size, cita_input_info);
