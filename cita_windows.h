@@ -51,10 +51,13 @@
   extern const char *cita_get_filename(const char *path);
   extern char input_info[60];
   #define ADD_CITA_INFO \
+	int clear_info = (cita_input_info == NULL); \
 	if (cita_input_info==NULL) { \
 		snprintf(input_info, sizeof(input_info), "%s():%d in %s", func, line, cita_get_filename(filename)); \
 		cita_input_info = input_info; \
 		}
+  #define RESET_CITA_INFO \
+	  if (clear_info) cita_input_info = NULL;
 
 #endif // H_CITA_WIN
 
@@ -259,10 +262,9 @@ const char *cita_get_filename(const char *path)
 void *cita_win_malloc(size_t size, const char *filename, const char *func, int line)
 {
 	CITA_LOCK
-	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_malloc(size);
-	if (clear_info) cita_input_info = NULL;
+	RESET_CITA_INFO
 	CITA_UNLOCK
 	return ptr;
 }
@@ -272,16 +274,16 @@ void cita_win_free(void *ptr, const char *filename, const char *func, int line)
 	CITA_LOCK
 	ADD_CITA_INFO
 	cita_free(ptr);
+	RESET_CITA_INFO
 	CITA_UNLOCK
 }
 
 void *cita_win_calloc(size_t nmemb, size_t size, const char *filename, const char *func, int line)
 {
 	CITA_LOCK
-	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *ptr = cita_calloc(nmemb, size);
-	if (clear_info) cita_input_info = NULL;
+	RESET_CITA_INFO
 	CITA_UNLOCK
 	return ptr;
 }
@@ -289,10 +291,9 @@ void *cita_win_calloc(size_t nmemb, size_t size, const char *filename, const cha
 void *cita_win_realloc(void *ptr, size_t size, const char *filename, const char *func, int line)
 {
 	CITA_LOCK
-	int clear_info = (cita_input_info == NULL);
 	ADD_CITA_INFO
 	void *new_ptr = cita_realloc(ptr, size);
-	if (clear_info) cita_input_info = NULL;
+	RESET_CITA_INFO
 	CITA_UNLOCK
 	return new_ptr;
 }
@@ -309,11 +310,11 @@ size_t cita_win_alloc_enough_pattern(void **buffer, size_t needed_count, size_t 
 		newsize = ceil((double) needed_count * inc_ratio);
 
 		CITA_LOCK
+
 		// Try realloc to the new larger size
-		int clear_info = (cita_input_info == NULL);
 		ADD_CITA_INFO
 		p = cita_realloc(*buffer, newsize * size_elem);
-		if (clear_info) cita_input_info = NULL;
+		RESET_CITA_INFO
 
 		if (p == NULL)
 		{
