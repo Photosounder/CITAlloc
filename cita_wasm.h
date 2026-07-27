@@ -50,6 +50,62 @@
 // Core implementation
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
+    #ifdef CITA_WASM_RUNNER_STACK_SIZE
+    static uintptr_t cita_wasm_allocator_lock_owner;
+    static size_t cita_wasm_allocator_lock_depth;
+
+    static uintptr_t cita_wasm_runner_token(void)
+    {
+	// Derive a nonzero identity from the runner's private stack slice
+	return (((uintptr_t) __builtin_frame_address(0) - 1) / CITA_WASM_RUNNER_STACK_SIZE) + 1;
+    }
+    #endif
+
+    static void cita_wasm_allocator_lock(void)
+    {
+	#ifdef CITA_WASM_RUNNER_STACK_SIZE
+	// Identify the runner through its private stack slice
+	uintptr_t token = cita_wasm_runner_token();
+
+	// Serialize allocator access while permitting callbacks into the owning runner
+	for (;;)
+	{
+		uintptr_t owner = __atomic_load_n(&cita_wasm_allocator_lock_owner, __ATOMIC_ACQUIRE);
+		if (owner == token)
+		{
+			cita_wasm_allocator_lock_depth++;
+			return;
+		}
+		if (owner == 0)
+		{
+			uintptr_t expected = 0;
+			if (__atomic_compare_exchange_n(&cita_wasm_allocator_lock_owner, &expected, token, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+			{
+				cita_wasm_allocator_lock_depth = 1;
+				return;
+			}
+		}
+	}
+	#endif
+    }
+
+    static void cita_wasm_allocator_unlock(void)
+    {
+	#ifdef CITA_WASM_RUNNER_STACK_SIZE
+	// Identify the runner through its private stack slice
+	uintptr_t token = cita_wasm_runner_token();
+
+	// Reject mismatched releases before changing the recursion depth
+	if (__atomic_load_n(&cita_wasm_allocator_lock_owner, __ATOMIC_RELAXED) != token || cita_wasm_allocator_lock_depth == 0)
+		__builtin_trap();
+
+	// Publish availability after the outermost release
+	cita_wasm_allocator_lock_depth--;
+	if (cita_wasm_allocator_lock_depth == 0)
+		__atomic_store_n(&cita_wasm_allocator_lock_owner, 0, __ATOMIC_RELEASE);
+	#endif
+    }
+
     #define CITA_ALIGN 16		// all allocations will be aligned to 16 bytes
     #define CITA_MAP_SCALE 14		// means a map cell covers 16 kB
     #define CITA_FREE_PATTERN 0xC5	// optional but makes the whole heap very neat
@@ -95,30 +151,46 @@ const char *cita_get_filename(const char *path)
 
 void *cita_wasm_malloc(size_t size, const char *filename, const char *func, int line)
 {
+	// Protect the allocator when runner synchronization is enabled
+	cita_wasm_allocator_lock();
 	ADD_CITA_INFO
 	void *ptr = cita_malloc(size);
 	RESET_CITA_INFO
+	// Release the optional allocator protection
+	cita_wasm_allocator_unlock();
 	return ptr;
 }
 
 void cita_wasm_free(void *ptr, const char *filename, const char *func, int line)
 {
+	// Protect the allocator when runner synchronization is enabled
+	cita_wasm_allocator_lock();
 	cita_free(ptr);
+	// Release the optional allocator protection
+	cita_wasm_allocator_unlock();
 }
 
 void *cita_wasm_calloc(size_t nmemb, size_t size, const char *filename, const char *func, int line)
 {
+	// Protect the allocator when runner synchronization is enabled
+	cita_wasm_allocator_lock();
 	ADD_CITA_INFO
 	void *ptr = cita_calloc(nmemb, size);
 	RESET_CITA_INFO
+	// Release the optional allocator protection
+	cita_wasm_allocator_unlock();
 	return ptr;
 }
 
 void *cita_wasm_realloc(void *ptr, size_t size, const char *filename, const char *func, int line)
 {
+	// Protect the allocator when runner synchronization is enabled
+	cita_wasm_allocator_lock();
 	ADD_CITA_INFO
 	void *new_ptr = cita_realloc(ptr, size);
 	RESET_CITA_INFO
+	// Release the optional allocator protection
+	cita_wasm_allocator_unlock();
 	return new_ptr;
 }
 
@@ -127,6 +199,9 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 {
 	size_t newsize;
 	void *p;
+
+	// Protect direct allocator access when runner synchronization is enabled
+	cita_wasm_allocator_lock();
 
 	if (needed_count > alloc_count)
 	{
@@ -140,6 +215,8 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 		if (p == NULL)
 		{
 			CITA_REPORT("cita_realloc(*buffer=%p, size=%zu) failed.\n", (void *) *buffer, newsize * size_elem);
+			// Release the optional allocator protection before returning
+			cita_wasm_allocator_unlock();
 			return alloc_count;
 		}
 		else
@@ -151,6 +228,8 @@ size_t cita_wasm_alloc_enough_pattern(void **buffer, size_t needed_count, size_t
 		alloc_count = newsize;
 	}
 
+	// Release the optional allocator protection
+	cita_wasm_allocator_unlock();
 	return alloc_count;
 }
 
