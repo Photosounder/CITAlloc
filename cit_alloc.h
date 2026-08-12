@@ -626,6 +626,11 @@ CITA_ADDR_TYPE cita_shrink_map(CITA_ADDR_TYPE mem_end)
 		size_t copy_count = new_count < old_count ? new_count : old_count;
 		memcpy(map_ptr, CITA_PTR(old_map_addr), copy_count * sizeof(cita_map_cell_t));
 
+		#ifdef CITA_FREE_PATTERN
+		// Erase the old map storage with the freeing pattern
+		memset(CITA_PTR(old_map_addr), CITA_FREE_PATTERN, old_map_addr_end - old_map_addr);
+		#endif
+
 		// Move element 2 into the replacement allocation's linked-list position
 		cita_elem_t *map_el = &ct->elem[2];
 		cita_elem_t *new_el = &ct->elem[map_index];
@@ -1497,7 +1502,7 @@ void *cita_malloc(size_t size)
 	#if CITA_INFO_LEN > 0
 	memset(el->extra.info, 0, sizeof(el->extra.info));
 	if (cita_input_info)						// Extra info provided through a global pointer
-		strncpy(el->extra.info, cita_input_info, sizeof(el->extra.info));
+		memcpy(el->extra.info, cita_input_info, sizeof(el->extra.info));
 	#endif
 
 	// Insert our element in the chain

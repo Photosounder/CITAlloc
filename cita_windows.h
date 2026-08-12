@@ -124,6 +124,7 @@ size_t windows_memory_max_usable_block(uintptr_t *base_addr)
 
 	char *address = 0;
 	size_t max_usable_block = 0;
+	*base_addr = 0;
 
 	// Go through the ranges of the memory map
 	while (VirtualQuery(address, &mbi, sizeof(mbi)))
@@ -164,7 +165,7 @@ static void cita_win_init()
 		InitializeCriticalSection(&cita_mutex);
 
 		// Reserve virtual memory
-		uintptr_t base_addr;
+		uintptr_t base_addr = 0;
 		cita_buffer.mem_max = windows_memory_max_usable_block(&base_addr);
 
 		// Round up the address to only have 2 hex digits
