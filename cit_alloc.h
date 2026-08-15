@@ -1500,9 +1500,11 @@ void *cita_malloc(size_t size)
 	el->extra.link = 0;
 	#endif
 	#if CITA_INFO_LEN > 0
-	memset(el->extra.info, 0, sizeof(el->extra.info));
-	if (cita_input_info)						// Extra info provided through a global pointer
-		memcpy(el->extra.info, cita_input_info, sizeof(el->extra.info));
+	// Store the allocation info and clear unused bytes
+	if (cita_input_info)
+		strncpy(el->extra.info, cita_input_info, sizeof(el->extra.info));
+	else
+		memset(el->extra.info, 0, sizeof(el->extra.info));
 	#endif
 
 	// Insert our element in the chain
