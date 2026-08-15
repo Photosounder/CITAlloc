@@ -5,10 +5,10 @@
 
   // Needed to stop the linker from adding the default implementation
   #include <stddef.h>	// for NULL
-  void *malloc(size_t size) { (void) size; return NULL; }
-  void free(void *ptr) { (void) ptr; }
-  void *calloc(size_t nmemb, size_t size) { (void) nmemb; (void) size; return NULL; }
-  void *realloc(void *ptr, size_t size)  { (void) ptr; (void) size; return NULL; }
+  void *(malloc)(size_t size) { (void) size; return NULL; }
+  void (free)(void *ptr) { (void) ptr; }
+  void *(calloc)(size_t nmemb, size_t size) { (void) nmemb; (void) size; return NULL; }
+  void *(realloc)(void *ptr, size_t size)  { (void) ptr; (void) size; return NULL; }
 
 #else // CITA_WASM_IMPLEMENTATION_PART1
 
