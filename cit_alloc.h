@@ -1606,6 +1606,14 @@ void *cita_realloc(void *ptr, size_t size)
 		cita_map_include_free_space_after(&map_im0, &map_im1, index);
 		#endif
 
+		// Wipe only the released tail before publishing the smaller allocation
+		#ifdef CITA_FREE_PATTERN
+		CITA_ADDR_TYPE new_end = el->addr + size;
+		if (new_end < el->addr_end)
+			memset(CITA_PTR(new_end), CITA_FREE_PATTERN, el->addr_end - new_end);
+		#endif
+
+		// Update the allocation boundary for shrinking, growing and unchanged sizes
 		el->addr_end = el->addr + size;
 		#ifdef CITA_GAP_LINKS
 		cita_gap_refresh(index);
