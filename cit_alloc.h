@@ -1450,6 +1450,8 @@ void *cita_malloc(size_t size)
 	#ifdef CITA_MAP_SCALE
 	// Search the map for a free space large enough
 	CITA_INDEX_TYPE i = cita_map_find_free_space(required_space);
+	// Refresh the reserved record because growing the map can relocate the table
+	el = &ct->elem[index];
 	if (i != NAI)
 	{
 		el->prev_index = i;
