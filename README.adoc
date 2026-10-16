@@ -111,6 +111,14 @@ CITA buffer at 0x20000000000, buffer size 1073745920, malloc returned 0x20040000
 
 Similar to cita_windows.h. Base addresses aren't rounded up.
 
+=== cita_linux.h
+
+Compile with `-pthread` and, for strict C modes that hide `MAP_ANONYMOUS`, `-D_DEFAULT_SOURCE`. Define `CITA_OS_MAX` before including the header to limit the virtual address reservation. The Linux backend test can be built with `cc -std=gnu11 -pthread tests/linux_backend.c -o linux_backend -lm` and run with `./linux_backend`.
+
+=== cita_gba_iwram.h
+
+Allocations inside the 32 kB internal work RAM of the Game Boy Advance.
+
 == Threading
 
 There's no code related to threading in `cit_alloc.h`, and neither should there be because you'd want everything to be locked from beginning to end and yet not double-lock when a function calls another one like when `cita_realloc()` calls `cita_malloc()`. Any mutex would go inside the functions defined in the platform implementation file. It might look something like this:

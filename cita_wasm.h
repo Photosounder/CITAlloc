@@ -17,7 +17,11 @@
   #define H_CITA_WASM
   
     #ifndef CITA_INDEX_TYPE
+      #ifdef CITA_WASM_THREADS
+      #define CITA_INDEX_TYPE uint32_t
+      #else
       #define CITA_INDEX_TYPE uint16_t	// means there can only be 65532 allocations
+      #endif
     #endif
 
     #include "cit_alloc.h"
@@ -50,20 +54,28 @@
 // Core implementation
   #ifdef CITA_WASM_IMPLEMENTATION_PART2
   
-    #ifdef CITA_WASM_RUNNER_STACK_SIZE
+    #if defined(CITA_WASM_THREADS) || defined(CITA_WASM_RUNNER_STACK_SIZE)
     static uintptr_t cita_wasm_allocator_lock_owner;
     static size_t cita_wasm_allocator_lock_depth;
+    #ifdef CITA_WASM_THREADS
+    static _Thread_local uint8_t cita_wasm_thread_marker;
+    #endif
 
     static uintptr_t cita_wasm_runner_token(void)
     {
+	#ifdef CITA_WASM_THREADS
+	// Identify the runner through its private TLS block regardless of stack location
+	return (uintptr_t) &cita_wasm_thread_marker + 1;
+	#else
 	// Derive a nonzero identity from the runner's private stack slice
 	return (((uintptr_t) __builtin_frame_address(0) - 1) / CITA_WASM_RUNNER_STACK_SIZE) + 1;
+	#endif
     }
     #endif
 
     static void cita_wasm_allocator_lock(void)
     {
-	#ifdef CITA_WASM_RUNNER_STACK_SIZE
+	#if defined(CITA_WASM_THREADS) || defined(CITA_WASM_RUNNER_STACK_SIZE)
 	// Identify the runner through its private stack slice
 	uintptr_t token = cita_wasm_runner_token();
 
@@ -91,7 +103,7 @@
 
     static void cita_wasm_allocator_unlock(void)
     {
-	#ifdef CITA_WASM_RUNNER_STACK_SIZE
+	#if defined(CITA_WASM_THREADS) || defined(CITA_WASM_RUNNER_STACK_SIZE)
 	// Identify the runner through its private stack slice
 	uintptr_t token = cita_wasm_runner_token();
 

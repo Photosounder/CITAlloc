@@ -8,8 +8,10 @@
     #define CITA_OS_WINDOWS
   #elif defined(__APPLE__) && defined(__MACH__)
     #define CITA_OS_MAC
+  #elif defined(__linux__)
+    #define CITA_OS_LINUX
   #else
-    #error cita_os.h only supports Windows, macOS and WebAssembly
+    #error cita_os.h only supports Windows, macOS, Linux and WebAssembly
   #endif
 
 #endif // H_CITA_OS
@@ -53,4 +55,14 @@
     #define CITA_MAC_MAX CITA_OS_MAX
   #endif
   #include "cita_mac.h"
+#endif
+
+#ifdef CITA_OS_LINUX
+  #if defined(CITA_OS_IMPLEMENTATION) && !defined(CITA_LINUX_IMPLEMENTATION)
+    #define CITA_LINUX_IMPLEMENTATION
+  #endif
+  #if defined(CITA_OS_MAX) && !defined(CITA_LINUX_MAX)
+    #define CITA_LINUX_MAX CITA_OS_MAX
+  #endif
+  #include "cita_linux.h"
 #endif
