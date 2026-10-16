@@ -1666,7 +1666,8 @@ void *cita_realloc(void *ptr, size_t size)
 			el = &ct->elem[index];
 		}
 
-		space = CITA_MEM_END - el->addr;
+		// Recheck the neighbor because memory growth can move the map after this buffer
+		space = el->next_index ? ct->elem[el->next_index].addr - el->addr : CITA_MEM_END - el->addr;
 	}
 
 	// If there's enough room, update the end of the buffer as well as the size of the space after it
@@ -1728,11 +1729,11 @@ void *cita_realloc(void *ptr, size_t size)
 		cita_free_core(ptr_new, 0, ct->last_malloc_index);
 		ct->map_update_skip = map_update_skip;
 
-		// Guard against the new buffer being linked to the old one
+		// Use current neighbors because nested allocation can move the map around the old buffer
 		if (el_new_copy.prev_index == index)
-			el_new_copy.prev_index = el_copy.prev_index;
+			el_new_copy.prev_index = ct->elem[index].prev_index;
 		if (el_new_copy.next_index == index)
-			el_new_copy.next_index = el_copy.next_index;
+			el_new_copy.next_index = ct->elem[index].next_index;
 
 		// Copy the data to the new location
 		memcpy(ptr_new, ptr, el_copy.addr_end - el_copy.addr);
