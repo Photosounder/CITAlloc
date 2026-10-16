@@ -1185,8 +1185,21 @@ void cita_table_init()
 	if (ct)
 		return;
 
-	// Enlarge memory if needed
-	cita_enlarge_memory(CITA_MEM_START + sizeof(cita_table_t));
+	// Obtain enough memory for the header and initial entries before writing them
+	size_t initial_size = sizeof(cita_table_t) + CITA_ALIGN - 1 + CITA_PADDING
+		+ sizeof(cita_elem_t) * CITA_INIT_ELEM_AS;
+	if (initial_size > (size_t) ((CITA_ADDR_TYPE) -1 - CITA_MEM_START))
+	{
+		CITA_REPORT("cita_table_init(): initial table of %zd bytes cannot fit in the address range starting at %#zx. Input info says \"%s\"", initial_size, (uintptr_t) CITA_MEM_START, cita_input_info);
+		return;
+	}
+	cita_enlarge_memory(CITA_MEM_START + initial_size);
+	if (CITA_MEM_END < CITA_MEM_START
+		|| (size_t) (CITA_MEM_END - CITA_MEM_START) < initial_size)
+	{
+		CITA_REPORT("cita_table_init(): initial table needs %zd bytes but memory from %#zx to %#zx is too small. Input info says \"%s\"", initial_size, (uintptr_t) CITA_MEM_START, (uintptr_t) CITA_MEM_END, cita_input_info);
+		return;
+	}
 
 	// Erase whole heap
 	cita_erase_to_mem_end(CITA_MEM_START);
@@ -1400,7 +1413,21 @@ void cita_free(void *ptr)
 
 void *cita_malloc(size_t size)
 {
+	// Reject sizes that cannot be represented as a heap address range
+	if (size > (size_t) ((CITA_ADDR_TYPE) -1 - CITA_MEM_START
+		- CITA_PADDING - (CITA_ALIGN - 1)))
+	{
+		CITA_REPORT("cita_malloc(%zd): requested size cannot be represented in the address range starting at %#zx. Input info says \"%s\"", size, (uintptr_t) CITA_MEM_START, cita_input_info);
+		return NULL;
+	}
+
+	// Stop if the initial metadata cannot fit in the available memory
 	cita_table_init();
+	if (ct == NULL)
+	{
+		CITA_REPORT("cita_malloc(%zd): failed to initialise the allocation table. Input info says \"%s\"", size, cita_input_info);
+		return NULL;
+	}
 	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
 
@@ -1419,15 +1446,27 @@ void *cita_malloc(size_t size)
 		// Enlarge the table
 		while (ct->elem_count+3 > ct->elem_as && ct->elem_as < NAI)
 		{
-			ct->elem_as *= 2;
-			if (ct->elem_as > NAI)
-				ct->elem_as = NAI;
-			ct->elem = cita_realloc(ct->elem, ct->elem_as * sizeof(cita_elem_t));
+			// Publish provisional capacity to permit the recursive metadata allocation
+			size_t old_capacity = ct->elem_as;
+			ct->elem_as = old_capacity > NAI / 2 ? NAI : old_capacity * 2;
+			cita_elem_t *new_elem = cita_realloc(ct->elem, ct->elem_as * sizeof(cita_elem_t));
+
+			// Retain the existing table and capacity if metadata growth fails
+			if (new_elem == NULL)
+			{
+				ct->elem_as = old_capacity;
+				CITA_REPORT("cita_malloc(%zd): failed to enlarge the allocation table from %zd to %zd elements. Input info says \"%s\"", size, old_capacity, old_capacity > NAI / 2 ? (size_t) NAI : old_capacity * 2, cita_input_info);
+				return NULL;
+			}
+			ct->elem = new_elem;
+		}
+		// Refuse an allocation when no representable table index remains
+		if (ct->elem_count >= NAI)
+		{
+			CITA_REPORT("cita_malloc(%zd). The number of elements in the table has reached the maximum. Use a larger index type. Input info says \"%s\"", size, cita_input_info);
+			return NULL;
 		}
 		ct->elem_count++;
-		
-		if (ct->elem_count > NAI)
-			CITA_REPORT("cita_malloc(%zd). The number of elements in the table has reached the maximum. Use a larger index type. Input info says \"%s\"", size, cita_input_info);
 
 		// Last element is now available, initialise it as such
 		index = ct->elem_count - 1;
@@ -1494,6 +1533,16 @@ void *cita_malloc(size_t size)
 
 	// Write the element
 	el->addr = cita_align_up(ct->elem[el->prev_index].addr_end);	// address of buffer
+	// Release the reserved entry if the chosen address would wrap around
+	if (el->addr < ct->elem[el->prev_index].addr_end
+		|| size > (size_t) ((CITA_ADDR_TYPE) -1 - el->addr - CITA_PADDING))
+	{
+		CITA_REPORT("cita_malloc(%zd): allocation starting at %#zx would overflow the address type. Input info says \"%s\"", size, (uintptr_t) el->addr, cita_input_info);
+		el->prev_index = ct->available_index;
+		el->next_index = NAI;
+		ct->available_index = index;
+		return NULL;
+	}
 	el->addr_end = el->addr + size;					// address after the end of this buffer
 	#ifndef CITA_EXCL_TIME
 	el->extra.time_created = el->extra.time_modified = ct->timestamp;
@@ -1551,8 +1600,17 @@ void *cita_malloc(size_t size)
 
 void *cita_calloc(size_t nmemb, size_t size)
 {
-	void *ptr = cita_malloc(nmemb*size);
-	memset(ptr, 0, nmemb*size);
+	// Reject multiplication overflow before calculating the allocation size
+	if (size != 0 && nmemb > SIZE_MAX / size)
+	{
+		CITA_REPORT("cita_calloc(%zd, %zd): element count times element size overflows size_t. Input info says \"%s\"", nmemb, size, cita_input_info);
+		return NULL;
+	}
+
+	// Clear only successfully allocated memory
+	void *ptr = cita_malloc(nmemb * size);
+	if (ptr != NULL)
+		memset(ptr, 0, nmemb * size);
 	return ptr;
 }
 
@@ -1560,7 +1618,21 @@ void *cita_realloc(void *ptr, size_t size)
 {
 	CITA_ADDR_TYPE addr = CITA_ADDR(ptr);
 
+	// Reject address overflow without changing the original allocation
+	if (size > (size_t) ((CITA_ADDR_TYPE) -1
+		- (ptr ? addr : CITA_MEM_START) - CITA_PADDING))
+	{
+		CITA_REPORT("cita_realloc(%#zx, %zd): resized buffer would overflow the address type. Input info says \"%s\"", (uintptr_t) addr, size, cita_input_info);
+		return NULL;
+	}
+
+	// Stop if the initial metadata cannot fit in the available memory
 	cita_table_init();
+	if (ct == NULL)
+	{
+		CITA_REPORT("cita_realloc(%#zx, %zd): failed to initialise the allocation table. Input info says \"%s\"", (uintptr_t) addr, size, cita_input_info);
+		return NULL;
+	}
 	cita_inc_event_counter();
 	cita_check_links_internal(__func__, __LINE__);
 
