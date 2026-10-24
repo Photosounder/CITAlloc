@@ -131,3 +131,5 @@ void cita_myplatform_free(void *ptr, const char *filename, const char *func, int
 	mutex_unlock(&cita_mutex);
 }
 ```
+
+The mutex itself must be usable without any runtime initialisation (a static initialiser like `PTHREAD_MUTEX_INITIALIZER` or `SRWLOCK_INIT`, or a zeroed atomic word), since the first allocations can come from several threads at once. For the same reason, if the platform implementation sets up its heap lazily, for instance by reserving virtual memory on the first allocation, that setup must run either while holding the mutex or through a run-once primitive like `pthread_once()`. Otherwise two threads can both see the heap as uninitialised and each reserve their own, leaving pointers from one of them rejected later on.
