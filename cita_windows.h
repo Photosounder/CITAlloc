@@ -105,9 +105,10 @@
   #endif
 
 #include <synchapi.h>
-CRITICAL_SECTION cita_mutex;
-#define CITA_LOCK { cita_win_init(); EnterCriticalSection(&cita_mutex); }
-#define CITA_UNLOCK LeaveCriticalSection(&cita_mutex);
+// A statically initialised SRW lock needs no runtime initialisation, so threads making their first allocation at the same time can't each initialise the heap
+SRWLOCK cita_mutex = SRWLOCK_INIT;
+#define CITA_LOCK { AcquireSRWLockExclusive(&cita_mutex); cita_win_init(); }
+#define CITA_UNLOCK ReleaseSRWLockExclusive(&cita_mutex);
 
 #ifndef _MEMORYAPI_H_
   extern __declspec(dllimport) void *CITA_WINAPI VirtualAlloc(void *lpAddress, size_t dwSize, unsigned long flAllocationType, unsigned long flProtect);
@@ -158,12 +159,9 @@ size_t windows_memory_max_usable_block(uintptr_t *base_addr)
 
 static void cita_win_init()
 {
-	// Init
+	// Init, only called with cita_mutex held, so the heap is reserved exactly once
 	if (cita_buffer.mem == NULL)
 	{
-		// Init mutex
-		InitializeCriticalSection(&cita_mutex);
-
 		// Reserve virtual memory
 		uintptr_t base_addr = 0;
 		cita_buffer.mem_max = windows_memory_max_usable_block(&base_addr);
